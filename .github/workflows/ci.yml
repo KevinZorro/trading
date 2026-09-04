@@ -41,9 +41,17 @@ jobs:
       - name: Tests de anti-leakage
         run: uv run pytest -m leakage -v
       - name: Fallar si no se recogio ningun test de anti-leakage
-        # Un marcador mal escrito dejaria este job en verde sin correr nada.
+        # Red de seguridad contra un marcador mal escrito. pytest ya devuelve 5
+        # ("ningun test recogido") en ese caso y el paso anterior fallaria, pero
+        # con un mensaje que no dice por que; este lo dice.
+        #
+        # `-o addopts=` es necesario: pyproject ya pasa -q, y un segundo -q
+        # sube el nivel de silencio a -qq, donde --collect-only imprime solo el
+        # conteo por archivo y no los node IDs. Sin esto el grep cuenta 0 y el
+        # job falla con los 14 tests en verde.
         run: |
-          n=$(uv run pytest -m leakage --collect-only -q | grep -c '::' || true)
+          n=$(uv run pytest -o addopts= -m leakage --collect-only -q \
+                | grep -c '::' || true)
           echo "tests de anti-leakage recogidos: $n"
           if [ "$n" -lt 1 ]; then
             echo "::error::el job de anti-leakage no recogio ningun test"
