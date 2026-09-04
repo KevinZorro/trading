@@ -1,0 +1,57 @@
+# Hooks locales a proposito: ruff y mypy corren via `uv run`, con las mismas
+# versiones pinneadas en pyproject.toml que usa el CI. Los hooks remotos
+# (mirrors-ruff, mirrors-mypy) traen su propia version y derivan del CI en
+# silencio, que es justo el fallo que un pre-commit deberia evitar.
+default_install_hook_types: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: no-commit-to-branch
+        # main esta protegida en GitHub; esto evita el viaje de ida y vuelta.
+        args: [--branch, main]
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: mypy-strict
+        name: mypy --strict (src/)
+        # Sobre todo src/, no sobre los archivos cambiados: mypy en modo strict
+        # necesita el modulo completo para resolver tipos entre archivos, y un
+        # chequeo parcial da falsos verdes.
+        entry: uv run mypy src
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
+      - id: pytest-anti-leakage
+        name: anti-leakage
+        # Rapidos (0.4 s) y son la garantia central del proyecto: no vale la
+        # pena descubrir en CI que un cambio abrio una fuga de informacion.
+        entry: uv run pytest -m leakage -q
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true

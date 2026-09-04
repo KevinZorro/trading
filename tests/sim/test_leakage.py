@@ -20,6 +20,10 @@ from sim.view import AccountSnapshot, MarketView
 
 from .conftest import make_series
 
+# Job propio en CI: el fallo de un anti-leakage no puede quedar como una
+# linea mas entre cientos de tests verdes.
+pytestmark = pytest.mark.leakage
+
 
 class _Espia:
     """Estrategia que registra lo que consigue ver y lo que le fue negado."""

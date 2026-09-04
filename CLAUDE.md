@@ -93,6 +93,38 @@ No los redefinas. Impórtalos o respétalos.
 - El generador sintético de Heston produce caminos continuos y por tanto gap cero.
   `overnight_gap_frac` existe para hacer testeable ese efecto.
 
+## Invariantes de calidad y CI
+
+Consolidados al montar el pipeline. No los relajes para que algo pase.
+
+- **La suite corre sin red.** `tests/conftest.py` bloquea `socket.connect`,
+  `connect_ex` y `create_connection`, y lanza `NetworkAccessError`. Un test que
+  necesite datos los versiona o los genera con `data.synthetic` y una semilla fija.
+  Un test que descarga de una API pasa hoy y en seis meses falla, o -peor- sigue
+  pasando con datos distintos y vuelve irreproducible un resultado del estudio.
+- **Los tests de anti-leakage llevan `@pytest.mark.leakage`** (a nivel de módulo con
+  `pytestmark`) y corren en un job propio del CI. Cuando la Etapa 2 agregue tests de
+  anti-leakage sobre `envs/`, márcalos: el job verifica que recogió al menos uno, así
+  que un marcador mal escrito falla en vez de quedar en verde sin correr nada.
+- **Tests caros: `@pytest.mark.slow`**, van a un job aparte. El job principal se
+  mantiene por debajo de los 5 minutos.
+- **Cuatro puertas obligatorias**, idénticas en local (pre-commit) y en CI:
+  `ruff check`, `ruff format --check`, `mypy --strict src`, y cobertura >= 85%.
+  Matriz de Python 3.11 y 3.12.
+- **`pytest.raises` siempre con `match`.** Un `raises(ValueError)` a secas queda en
+  verde aunque la falla venga de un motivo distinto del que el test pretendía cubrir.
+- **Nada de `np.ndarray` sin parámetros en firmas.** Usa `FloatArray` y `TimeArray`
+  de `data.schema`: `np.ndarray` pelado hace que mypy trate como `Any` todo lo que
+  sale de la serie, que es precisamente lo que hay que tipar.
+- **Los `Protocol` declaran `name` como property de solo lectura**, no como
+  `name: str`. Las implementaciones son dataclasses frozen y un atributo de clase
+  exige que sea asignable; con `name: str` ningún modelo de costo satisfacía
+  formalmente su propio Protocol.
+- **`uv.lock` se versiona** y el CI corre con `uv sync --frozen` más `uv lock --check`.
+  El bytecode compilado no se versiona (`.gitignore`).
+- `PYTHONHASHSEED=0` en CI: sin eso el orden de iteración de sets varía entre
+  corridas y un test puede pasar o fallar según el día.
+
 ## Anti-patrones prohibidos
 
 - Normalizar con estadísticas calculadas sobre todo el dataset. Se ajusta solo en train.
@@ -115,12 +147,12 @@ Python 3.11+, `uv`, `gymnasium`, `stable-baselines3` (PPO/SAC), `polars`/`pandas
 ```
 src/
   data/       # instruments, schema, validation, calendars, adjustments, loaders, synthetic
-  sim/        # engine, costs, orders, portfolio, view, baselines
+  sim/        # engine, costs, orders, portfolio, view
   eval/       # métricas, walk-forward, tests estadísticos
   risk/       # RiskLayer independiente del agente
   features/   # técnicos y de noticias; transformadores fit-en-train
   envs/       # entornos Gymnasium sobre el simulador (wrapper delgado, sin lógica propia)
-  agents/     # wrappers de PPO/SAC
+  agents/     # baselines (buy-and-hold, aleatorio, cruce de medias) y wrappers PPO/SAC
   configs/
 tests/
 docs/adr/
@@ -129,7 +161,7 @@ notebooks/    # solo exploración
 
 ## Etapas
 
-1. **Simulador + baselines.** `data/` y `sim/` cerrados, 166 tests. Falta `eval/`.
+1. **Simulador + baselines.** `data/` y `sim/` cerrados, 173 tests. Falta `eval/`.
 2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage.
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
 4. **Pipeline de noticias** con validación point-in-time estricta.
@@ -154,7 +186,7 @@ Para cada feature, sin excepción:
 2. Implementación con sus tests
 3. Verificación local en verde
 4. Commits convencionales (`feat:`, `fix:`, `test:`, `chore:`)
-5. Push y PR con `gh` CLI
+5. Push y PR (con `gh` CLI o la API de GitHub)
 6. Descripción del PR: qué resuelve, decisiones de diseño, `ASSUMPTION`s introducidos,
    qué tests lo cubren
 7. Esperar CI verde
