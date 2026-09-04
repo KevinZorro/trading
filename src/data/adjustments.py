@@ -22,10 +22,10 @@ from __future__ import annotations
 import numpy as np
 
 from data.errors import LookaheadError
-from data.schema import BarSeries
+from data.schema import BarSeries, FloatArray
 
 
-def total_return_index(series: BarSeries, base: float = 1.0) -> np.ndarray:
+def total_return_index(series: BarSeries, base: float = 1.0) -> FloatArray:
     """Indice de retorno total, point-in-time seguro.
 
     ``TRI[0] = base`` y, para ``t >= 1``::
@@ -48,7 +48,7 @@ def total_return_index(series: BarSeries, base: float = 1.0) -> np.ndarray:
     return base * np.cumprod(growth)
 
 
-def total_return_log_returns(series: BarSeries) -> np.ndarray:
+def total_return_log_returns(series: BarSeries) -> FloatArray:
     """Retornos logaritmicos de retorno total. ``r[0] = 0`` por convencion.
 
     Los precios crudos no son estacionarios y no se usan como feature; esta es
@@ -62,7 +62,7 @@ def total_return_log_returns(series: BarSeries) -> np.ndarray:
 
 def backward_adjusted_close(
     series: BarSeries, *, allow_lookahead: bool = False
-) -> np.ndarray:
+) -> FloatArray:
     """Cierres ajustados hacia atras. **Solo para graficar.**
 
     Cada precio anterior a un evento se reescribe usando informacion publicada

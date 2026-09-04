@@ -7,6 +7,8 @@ resultados que nadie puede auditar despues.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import pandas as pd
 
 from data.calendars import Calendar
@@ -28,11 +30,11 @@ from data.schema import (
 _MAX_REPORTED = 10
 
 
-def _sample(values) -> str:
-    values = list(values)
-    head = ", ".join(str(v) for v in values[:_MAX_REPORTED])
-    if len(values) > _MAX_REPORTED:
-        head += f", ... (+{len(values) - _MAX_REPORTED} mas)"
+def _sample(values: Iterable[object]) -> str:
+    listado = list(values)
+    head = ", ".join(str(v) for v in listado[:_MAX_REPORTED])
+    if len(listado) > _MAX_REPORTED:
+        head += f", ... (+{len(listado) - _MAX_REPORTED} mas)"
     return head
 
 

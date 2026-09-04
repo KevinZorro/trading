@@ -23,13 +23,18 @@ import numpy as np
 
 from data.errors import LookaheadError
 from data.instruments import InstrumentSpec
-from data.schema import OHLCV_FIELDS, BarSeries
+from data.schema import OHLCV_FIELDS, BarSeries, FloatArray, TimeArray
 
 
 class MarketView:
     """Vista inmutable de la serie hasta la barra ``t`` inclusive."""
 
     __slots__ = ("_fields", "_instrument", "_t", "_timestamp")
+
+    _fields: dict[str, FloatArray]
+    _timestamp: TimeArray
+    _instrument: InstrumentSpec
+    _t: int
 
     def __init__(self, series: BarSeries, t: int) -> None:
         if not 0 <= t < len(series):
@@ -49,7 +54,8 @@ class MarketView:
 
     @property
     def timestamp(self) -> np.datetime64:
-        return self._timestamp[-1]
+        ultimo: np.datetime64 = self._timestamp[-1]
+        return ultimo
 
     @property
     def instrument(self) -> InstrumentSpec:
@@ -100,7 +106,7 @@ class MarketView:
 
     # -- acceso vectorial -----------------------------------------------
 
-    def history(self, field: str, n: int) -> np.ndarray:
+    def history(self, field: str, n: int) -> FloatArray:
         """Ultimas ``n`` barras de ``field``, terminando en ``t``.
 
         Devuelve una copia de solo lectura: ni se puede mutar la serie ni se
@@ -119,14 +125,14 @@ class MarketView:
         out.flags.writeable = False
         return out
 
-    def log_returns(self, n: int) -> np.ndarray:
+    def log_returns(self, n: int) -> FloatArray:
         """Retornos logaritmicos de cierre de las ultimas ``n`` barras.
 
         Los precios crudos no son estacionarios; esta es la forma preferida de
         consumir la serie desde una estrategia.
         """
         closes = self.history("close", n + 1)
-        out = np.log(closes[1:] / closes[:-1])
+        out: FloatArray = np.log(closes[1:] / closes[:-1])
         out.flags.writeable = False
         return out
 
