@@ -11,95 +11,163 @@ Se comparan **dos agentes idénticos** salvo por su espacio de estado:
 Se evalúan en **3 regímenes de riesgo** (bajo / medio / alto) y con **capital variable**
 para determinar a partir de qué monto los costos de transacción destruyen cualquier ventaja.
 
-**Este es un proyecto de investigación, no un bot de producción.** El objetivo es un
-resultado honesto sobre si las noticias aportan alfa, no maximizar una métrica de backtest.
-Un resultado negativo bien medido es un resultado válido y esperado.
+El objetivo es un resultado honesto sobre si las noticias aportan alfa, no maximizar una
+métrica de backtest. Un resultado negativo bien medido es un resultado válido y esperado.
+
+## Objetivo a largo plazo: ejecución real
+
+Este sistema debe poder operar con dinero real en el futuro. No se construye infraestructura
+de trading en vivo todavía, pero **toda decisión de diseño preserva la paridad
+backtest-live**: el mismo código de estrategia y de gestión de riesgo debe poder correr
+contra el simulador y contra un broker real, sin ramas condicionales por entorno.
+
+Consecuencias vigentes desde ya:
+
+- Ninguna llamada directa a `datetime.now()`. El tiempo entra por un `Clock` inyectable.
+- Los identificadores de orden los genera el emisor (`client_order_id` único), no el venue.
+  Sin esto, un timeout de red en vivo duplica posiciones al reintentar.
+- La estrategia nunca asume que su memoria del estado es la verdad. La posición autoritativa
+  la reporta el venue, y el arranque siempre reconcilia contra él.
+- La capa de riesgo vive fuera del agente y se aplica idénticamente en simulación y en vivo.
+  Un agente RL ante un estado fuera de distribución puede decidir cualquier cosa; el límite
+  de riesgo es lo que separa una mala racha de una pérdida total.
+- Nada de símbolos, rutas o parámetros hardcodeados: todo por configuración.
+
+Gate obligatorio antes de cualquier capital real: **paper trading en vivo de 3 a 6 meses**,
+comparando ejecución real contra lo que el simulador predijo para las mismas señales. Si el
+slippage real difiere materialmente del simulado, todos los resultados del estudio se releen
+con ese factor.
 
 ## Principios no negociables
 
-Estos son los que más se violan por accidente. Trátalos como invariantes del proyecto.
-
-1. **Sin lookahead bias.** Ningún dato disponible en el instante `t` puede depender de
-   información publicada después de `t`. Aplica a precios, noticias, revisiones de datos
-   fundamentales y a los modelos de NLP usados para extraer sentimiento.
-2. **Point-in-time timestamps.** Las noticias usan hora de *publicación original*, nunca
-   fecha de última edición. Si un dataset no distingue ambas, se documenta como limitación.
-3. **Costos dentro de la recompensa.** Comisiones, spread y slippage se restan en la función
-   de reward, no en un post-procesamiento. Restarlos después produce agentes que sobre-operan.
-4. **La ejecución nunca ocurre en la misma barra que generó la señal.** Decisión con datos
-   de cierre de `t`, ejecución en la apertura de `t+1` (o con latencia explícita en intradía).
+1. **Sin lookahead bias.** Ningún dato disponible en `t` puede depender de información
+   publicada después de `t`. Aplica a precios, noticias, fundamentales y a los modelos de
+   NLP usados para extraer sentimiento.
+2. **Point-in-time timestamps.** Las noticias usan hora de publicación original, nunca de
+   última edición. Si la fuente no distingue, se documenta como limitación.
+3. **Costos dentro de la recompensa.** Comisiones, spread y slippage se restan en el reward,
+   no en post-procesamiento.
+4. **Ejecución nunca en la misma barra que generó la señal.** Decisión con close de `t`,
+   ejecución al open de `t+1`.
 5. **Nunca reportar el mejor seed.** Toda métrica se reporta como distribución sobre >= 10
-   semillas: mediana, p25, p75, min, max. El mejor run de un agente RL en trading es ruido.
-6. **Todo experimento incluye baselines.** buy-and-hold, agente aleatorio y cruce de medias.
-   Si el agente no supera buy-and-hold con costos, el resultado es "no supera buy-and-hold".
-7. **Reproducibilidad total.** Seeds fijos, versiones de dependencias pinneadas, config
-   serializada junto a cada resultado.
+   semillas: mediana, p25, p75, min, max.
+6. **Todo experimento incluye baselines**: buy-and-hold, aleatorio, cruce de medias.
+7. **Reproducibilidad total.** Seeds fijos, dependencias pinneadas, config serializada junto
+   a cada resultado.
+
+## Invariantes consolidados en la Etapa 1
+
+No los redefinas. Impórtalos o respétalos.
+
+- `allow_short=False`. El flag existe en la firma y lanza `NotImplementedError`.
+- Espacio de acción del agente en `[0, 1]`. Usa la constante `LONG_ONLY_ACTION_RANGE`
+  del motor; no la redeclares en el env.
+- Fraccionales, tick, lote, mínimos y comisiones son propiedad de `InstrumentSpec` por
+  instrumento, no configuración global.
+- En cripto el binding constraint suele ser `min_notional`, no `min_order_qty`.
+  `check_tradable` los evalúa por separado y reporta cuál mordió.
+- `check_tradable` **nunca redimensiona**. Rechaza y registra el motivo.
+- `round_qty` siempre hacia cero.
+- Contabilidad con `positions: dict[str, float]` aunque hoy sea un solo símbolo.
+- Remanente de fill parcial se cancela, no se arrastra. La posición que ve el agente es
+  siempre la realmente llenada, nunca la intencionada.
+- Orden emitida en la última barra: `EXPIRED`.
+- Dos series de equity paralelas:
+  - `equity_mark` = cash + posición a close. Métrica primaria.
+  - `equity_liquidation` = cash + producto neto de cerrar la posición en esa barra,
+    con spread, slippage y comisión de salida. Contrafactual puro: no toca cash, posición
+    ni el log. El slippage de salida usa el volumen **de esa barra**.
+  - Con `allow_short=False`, aserción de que `equity_liquidation <= equity_mark`. Si se
+    invierte, hay bug de signo.
+- **`gap`, `spread_cost`, `slippage_cost` y `commission` van siempre en columnas separadas
+  del log. Jamás agregados en una sola métrica de "costos".** Medido en la Etapa 1: en el
+  tier alto el gap fue favorable y compensó un cuarto de los costos, invirtiendo el orden
+  aparente de los regímenes.
+- Spread y slippage nunca mejoran el precio de referencia. Hay test explícito.
+- Precios sin ajustar para ejecución; factores de ajuste en columnas separadas.
+  `total_return_index` es point-in-time; `backward_adjusted_close` exige
+  `allow_lookahead=True`.
+- Corwin-Schultz para estimar spread desde high-low, no el rango crudo. Devuelve spread
+  relativo; el costo de cruzar es la mitad.
+- `cash_rate` configurable, 0.0 por defecto.
+- El generador sintético de Heston produce caminos continuos y por tanto gap cero.
+  `overnight_gap_frac` existe para hacer testeable ese efecto.
 
 ## Anti-patrones prohibidos
 
-- Normalizar features usando estadísticas calculadas sobre todo el dataset (incluye el test).
-  La normalización se ajusta solo con datos de entrenamiento.
-- Usar precios crudos como feature. No son estacionarios. Usar retornos logarítmicos.
-- Train/test split simple. Se usa **walk-forward** con ventanas rodantes.
-- Rellenar NaN con `ffill` a través de la frontera train/test.
+- Normalizar con estadísticas calculadas sobre todo el dataset. Se ajusta solo en train.
+- Precios crudos como feature. Usar retornos logarítmicos.
+- Train/test split simple. Se usa walk-forward con ventanas rodantes.
+- `ffill` a través de la frontera train/test.
 - Ejecutar al precio medio ignorando el spread.
-- Iterar hiperparámetros contra el conjunto de test. El test se toca una vez, al final.
-- Universos de activos construidos con la lista actual de constituyentes (survivorship bias).
+- Iterar hiperparámetros contra el test. El test se toca una vez, al final.
+- Universos construidos con la lista actual de constituyentes (survivorship bias).
+- Baselines que se autocensuran pre-redondeando a cero: hace indistinguible "no quiso" de
+  "no pudo". Se envía la orden y el rechazo queda en el log.
 
 ## Stack
 
-- Python 3.11+
-- `uv` para gestión de dependencias
-- `gymnasium` para la interfaz de entorno
-- `stable-baselines3` (PPO, SAC) para los agentes
-- `polars` o `pandas` para datos
-- `pytest` para tests
-- `hydra` o dataclasses + YAML para configuración
-- MLflow o wandb para tracking de experimentos
+Python 3.11+, `uv`, `gymnasium`, `stable-baselines3` (PPO/SAC), `polars`/`pandas`,
+`pytest`, `hydra` o dataclasses + YAML, MLflow o wandb.
 
-## Estructura del repositorio
+## Estructura
 
 ```
 src/
-  data/          # ingesta, alineación temporal, validación point-in-time
-  sim/           # motor de simulación: order book, costos, slippage, latencia
-  envs/          # entornos Gymnasium que envuelven el simulador
-  features/      # técnicos y de noticias; transformadores fit-en-train
-  agents/        # wrappers de PPO/SAC + baselines heurísticos
-  eval/          # métricas, walk-forward, tests estadísticos
-  configs/       # YAML por experimento
+  data/       # instruments, schema, validation, calendars, adjustments, loaders, synthetic
+  sim/        # engine, costs, orders, portfolio, view, baselines
+  eval/       # métricas, walk-forward, tests estadísticos
+  risk/       # RiskLayer independiente del agente
+  features/   # técnicos y de noticias; transformadores fit-en-train
+  envs/       # entornos Gymnasium sobre el simulador (wrapper delgado, sin lógica propia)
+  agents/     # wrappers de PPO/SAC
+  configs/
 tests/
-notebooks/       # solo exploración; nada de lógica de producción aquí
+docs/adr/
+notebooks/    # solo exploración
 ```
 
-## Etapas del proyecto
+## Etapas
 
-Se construye en orden. **No se avanza a la siguiente etapa sin cerrar la anterior.**
-
-1. **Simulador + baselines.** Motor de ejecución con costos realistas. Baselines corriendo
-   sobre él. Sin ML.
-2. **Entorno Gymnasium** sobre el simulador, con tests que verifican ausencia de leakage.
-3. **Agente A** (solo precio) en un activo, un régimen. Pregunta a responder:
-   ¿supera buy-and-hold neto de costos?
+1. **Simulador + baselines.** `data/` y `sim/` cerrados, 166 tests. Falta `eval/`.
+2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage.
+3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
 4. **Pipeline de noticias** con validación point-in-time estricta.
 5. **Agente B** y comparación controlada contra A.
-6. **Barrido** de regímenes y capital.
-7. **Paper trading** en vivo antes de cualquier consideración de capital real.
+6. **Barrido** de regímenes y capital. `PortfolioSimulator` multi-activo.
+7. **Paper trading** en vivo.
 
-## Métricas de evaluación
+## Métricas
 
 Retorno total, CAGR, Sharpe, Sortino, max drawdown, Calmar, turnover, win rate,
-profit factor, y **costos totales pagados** como métrica de primer nivel.
+profit factor, y costos desglosados como métrica de primer nivel. Sobre **ambas** series de
+equity, con la brecha entre ellas como métrica explícita (mide fricción no realizada).
 
-Para significancia estadística ante comparaciones múltiples, usar **Deflated Sharpe Ratio**
+Para significancia ante comparaciones múltiples: **Deflated Sharpe Ratio**
 (Bailey & López de Prado), no p-values ingenuos.
+
+## Flujo de trabajo
+
+Para cada feature, sin excepción:
+
+1. Rama desde `main`: `feat/<nombre>` o `fix/<nombre>`
+2. Implementación con sus tests
+3. Verificación local en verde
+4. Commits convencionales (`feat:`, `fix:`, `test:`, `chore:`)
+5. Push y PR con `gh` CLI
+6. Descripción del PR: qué resuelve, decisiones de diseño, `ASSUMPTION`s introducidos,
+   qué tests lo cubren
+7. Esperar CI verde
+8. **Reportar el PR. No mergear sin aprobación humana.**
 
 ## Estilo de trabajo esperado
 
-- Escribe tests antes o junto con la lógica, especialmente en `sim/` y `data/`.
-- Los tests de leakage son tan importantes como los tests funcionales.
-- Prefiere código explícito y aburrido sobre abstracciones ingeniosas.
-- Si una decisión de diseño implica un supuesto sobre el mercado, documéntalo en un
-  comentario con la palabra `ASSUMPTION:` para poder auditarlos todos después.
-- Si detectas que una instrucción mía introduce leakage o un backtest optimista, dilo
-  antes de implementarla.
+- Tests junto con la lógica, especialmente en `sim/`, `data/` y `risk/`.
+- Los tests de anti-leakage son tan importantes como los funcionales.
+- Tests con oráculos calculados a mano, nunca con la propia implementación como referencia.
+- Código explícito y aburrido sobre abstracciones ingeniosas.
+- Supuestos sobre el mercado documentados con comentarios `ASSUMPTION:`.
+- **Si una instrucción introduce leakage, un backtest optimista o una premisa falsa, dilo
+  antes de implementarla.** En la Etapa 1 se corrigió una afirmación errónea sobre el
+  drawdown de la serie de liquidación en vez de forzar el test para que pasara. Ese es el
+  comportamiento correcto.
