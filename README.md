@@ -41,5 +41,5 @@ falla con `NetworkAccessError`. Los datos se cargan de archivos locales o se gen
 
 ## Estado
 
-Etapa 1 (simulador + baselines) cerrada salvo `src/eval/`. Ver la sección "Etapas" de
+Etapa 1 (simulador, baselines y métricas) cerrada. Ver la sección "Etapas" de
 `CLAUDE.md`.
