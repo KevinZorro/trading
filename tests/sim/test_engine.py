@@ -488,18 +488,20 @@ class TestConfiguracion:
             SimConfig(initial_cash=1_000.0, latency_bars=2)
 
     @pytest.mark.parametrize(
-        "kwargs",
+        ("kwargs", "match"),
         [
-            {"initial_cash": 0.0},
-            {"max_participation": 0.0},
-            {"max_participation": 1.5},
-            {"cash_rate": -0.01},
+            ({"initial_cash": 0.0}, "initial_cash debe ser positivo"),
+            ({"max_participation": 0.0}, "max_participation debe estar"),
+            ({"max_participation": 1.5}, "max_participation debe estar"),
+            ({"cash_rate": -0.01}, "cash_rate no puede ser negativo"),
         ],
     )
-    def test_parametros_invalidos(self, kwargs: dict) -> None:
-        base = {"initial_cash": 1_000.0}
-        with pytest.raises(ValueError):
-            SimConfig(**{**base, **kwargs})
+    def test_parametros_invalidos(
+        self, kwargs: dict[str, object], match: str
+    ) -> None:
+        base: dict[str, object] = {"initial_cash": 1_000.0}
+        with pytest.raises(ValueError, match=match):
+            SimConfig(**{**base, **kwargs})  # type: ignore[arg-type]
 
     def test_la_config_se_serializa_con_el_resultado(
         self, fractional: InstrumentSpec

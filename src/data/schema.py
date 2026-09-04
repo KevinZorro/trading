@@ -16,9 +16,9 @@ from data.errors import SchemaError
 from data.instruments import InstrumentSpec
 
 PRICE_FIELDS: tuple[str, ...] = ("open", "high", "low", "close")
-OHLCV_FIELDS: tuple[str, ...] = PRICE_FIELDS + ("volume",)
+OHLCV_FIELDS: tuple[str, ...] = (*PRICE_FIELDS, "volume")
 EVENT_FIELDS: tuple[str, ...] = ("split_factor", "cash_dividend")
-REQUIRED_COLUMNS: tuple[str, ...] = ("timestamp",) + OHLCV_FIELDS + ("symbol",)
+REQUIRED_COLUMNS: tuple[str, ...] = ("timestamp", *OHLCV_FIELDS, "symbol")
 OPTIONAL_COLUMNS: tuple[str, ...] = EVENT_FIELDS
 
 # Nombres que delatan precios ajustados retroactivamente. Si aparecen en la

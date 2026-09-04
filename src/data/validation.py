@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pandas as pd
 
+from data.calendars import Calendar
 from data.errors import (
     AdjustedPriceError,
     CalendarGapError,
     DataValidationError,
     SchemaError,
 )
-from data.calendars import Calendar
 from data.instruments import InstrumentSpec
 from data.schema import (
     ADJUSTED_COLUMN_HINTS,

@@ -216,7 +216,10 @@ class TestBarridoDeCapital:
     def test_los_costos_fijos_pesan_mas_con_capital_bajo(self) -> None:
         """La comision minima es la que destruye la ventaja con poco capital."""
         spec = us_equity_spec(
-            "TEST", commission=CommissionSchema(kind="per_share", value=0.005, minimum=1.0)
+            "TEST",
+            commission=CommissionSchema(
+                kind="per_share", value=0.005, minimum=1.0
+            ),
         )
         series = make_series(spec, [10.0] * 10)
         config = SimConfig(initial_cash=0.0 + 1.0)  # placeholder, se reemplaza abajo

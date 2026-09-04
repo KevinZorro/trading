@@ -45,7 +45,7 @@ def test_ohlc_coherente() -> None:
 def test_arrays_son_de_solo_lectura() -> None:
     """Una estrategia no debe poder corromper la serie bajo el motor."""
     series = generate_gbm_sv(50, seed=1)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="read-only"):
         series.close[0] = 1.0
 
 
@@ -99,7 +99,7 @@ def test_sin_eventos_corporativos() -> None:
 
 
 def test_parametros_invalidos() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="al menos 2 barras"):
         generate_gbm_sv(1, seed=0)
     with pytest.raises(ValueError, match="regimen desconocido"):
         generate_gbm_sv(10, seed=0, params="extremo")

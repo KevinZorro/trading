@@ -7,6 +7,8 @@ aqui es un intento distinto de romper la barrera.
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import pytest
 
@@ -38,7 +40,7 @@ class _Espia:
     ) -> MarketOrder | None:
         try:
             self.vistos.append(self.intento(view))
-        except Exception as exc:  # noqa: BLE001 - se registra para inspeccion
+        except Exception as exc:
             self.errores.append(exc)
         return None
 
@@ -246,10 +248,8 @@ def test_una_estrategia_no_puede_corromper_la_serie(
             return None
 
         def on_bar(self, view, account):
-            try:
+            with contextlib.suppress(ValueError):
                 view.history("close", 1)[0] = 0.0
-            except ValueError:
-                pass
             return None
 
     Simulator(series, SimConfig(initial_cash=1_000.0)).run(Vandalo())

@@ -96,7 +96,7 @@ class TestAdmisibilidad:
 
     def test_precio_no_positivo_es_error_de_programacion(self) -> None:
         spec = us_equity_spec("AAPL")
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="precio no positivo"):
             spec.check_tradable(1.0, price=0.0)
 
 
@@ -116,31 +116,35 @@ class TestSpecInvalida:
             )
 
     @pytest.mark.parametrize(
-        "kwargs",
+        ("kwargs", "match"),
         [
-            {"tick_size": 0.0},
-            {"lot_size": 0.0},
-            {"qty_precision": -1},
-            {"min_notional": -1.0},
+            ({"tick_size": 0.0}, "tick_size debe ser positivo"),
+            ({"lot_size": 0.0}, "lot_size debe ser positivo"),
+            ({"qty_precision": -1}, "qty_precision no puede ser negativa"),
+            ({"min_notional": -1.0}, "los minimos no pueden ser negativos"),
         ],
     )
-    def test_parametros_invalidos(self, kwargs: dict) -> None:
-        base = dict(
-            symbol="X",
-            venue="TEST",
-            tick_size=0.01,
-            lot_size=1.0,
-            allow_fractional=False,
-            qty_precision=0,
-            min_order_qty=1.0,
-            min_notional=0.0,
-            commission_schema=CommissionSchema(),
-        )
-        with pytest.raises(ValueError):
-            InstrumentSpec(**{**base, **kwargs})
+    def test_parametros_invalidos(
+        self, kwargs: dict[str, object], match: str
+    ) -> None:
+        base: dict[str, object] = {
+            "symbol": "X",
+            "venue": "TEST",
+            "tick_size": 0.01,
+            "lot_size": 1.0,
+            "allow_fractional": False,
+            "qty_precision": 0,
+            "min_order_qty": 1.0,
+            "min_notional": 0.0,
+            "commission_schema": CommissionSchema(),
+        }
+        # El match no es cosmetico: sin el, un cambio que hiciera fallar la
+        # construccion por otro motivo dejaria el test en verde igual.
+        with pytest.raises(ValueError, match=match):
+            InstrumentSpec(**{**base, **kwargs})  # type: ignore[arg-type]
 
     def test_comision_invalida(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="kind de comision desconocido"):
             CommissionSchema(kind="porcentual")  # type: ignore[arg-type]
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="value de comision no puede ser"):
             CommissionSchema(kind="percent", value=-0.1)

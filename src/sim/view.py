@@ -78,7 +78,8 @@ class MarketView:
             )
         if lookback > self._t:
             raise IndexError(
-                f"lookback={lookback} excede la historia disponible ({len(self)} barras)"
+                f"lookback={lookback} excede la historia disponible "
+                f"({len(self)} barras)"
             )
         return float(self._fields[field][-1 - lookback])
 
@@ -111,7 +112,8 @@ class MarketView:
             raise ValueError("n debe ser positivo")
         if n > len(self):
             raise IndexError(
-                f"se pidieron {n} barras y solo hay {len(self)} disponibles en t={self._t}"
+                f"se pidieron {n} barras y solo hay {len(self)} "
+                f"disponibles en t={self._t}"
             )
         out = np.array(self._fields[field][-n:], dtype=np.float64, copy=True)
         out.flags.writeable = False

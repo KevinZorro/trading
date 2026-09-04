@@ -20,15 +20,14 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from data.instruments import RejectReason as InstrumentRejectReason
 from data.schema import BarSeries
 from sim.costs import (
     CommissionModel,
+    NoSlippage,
     SlippageModel,
     SpreadContext,
     SpreadModel,
     ZeroSpread,
-    NoSlippage,
     commission_from_instrument,
 )
 from sim.orders import Fill, MarketOrder, OrderStatus, RejectReason

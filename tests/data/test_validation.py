@@ -13,7 +13,7 @@ from data.errors import (
     DataValidationError,
     SchemaError,
 )
-from data.instruments import InstrumentSpec, us_equity_spec
+from data.instruments import InstrumentSpec
 from data.validation import validate_bars
 
 from .conftest import SESSION_TIME, make_frame
