@@ -168,6 +168,50 @@ externo o a la salida de un broker en la Etapa 7.
 - Una serie de `n` observaciones tiene `n - 1` períodos. Un año de barras diarias son
   253 observaciones, no 252.
 
+## Invariantes de ejecución real
+
+Consolidados en el refactor de arquitectura. Ver `docs/adr/0001-arquitectura-para-ejecucion-real.md`
+para el porqué de cada uno y el inventario de lo que falta para operar en vivo.
+
+- **`ExecutionVenue` es la interfaz contra la que se opera**, en simulación y en vivo:
+  `submit_order`, `cancel_order`, `get_positions`, `get_fills`, `reconcile`. `Simulator`
+  es una implementación; el adaptador de broker de la Etapa 7 será otra. El runner y la
+  capa de riesgo hablan con el protocolo y no saben cuál tienen enfrente.
+- **`submit_order` acusa recepción, no ejecución.** Devuelve `OrderAck`, nunca `Fill`.
+  La validación va partida en dos: **admisión** al enviar (identificador presente, no
+  duplicado, venue activo) y **ejecución** al llenar (volumen, mínimos, cash). No se
+  pueden adelantar: en el momento del envío, los datos de la barra de ejecución todavía
+  no existen. Validarlos ahí sería lookahead.
+- **La superficie pública del motor está fijada por test** en una lista blanca de seis
+  nombres. Un séptimo método público rompe `test_el_motor_no_expone_step` y obliga a
+  justificarlo. Ningún método público mueve el cursor `_t`; hay tests que lo verifican.
+- **El tiempo entra por el `Clock` inyectable.** `SystemClock` es el único punto de
+  `src/` que consulta el reloj de pared, y hay un test que recorre el árbol y falla si
+  aparece un `datetime.now()` en otro módulo. `advance_to` prohíbe retroceder dentro de
+  una corrida; `reset_to` es la única forma de rebobinar, y existe porque una instancia
+  de `Simulator` se corre más de una vez.
+- **El `client_order_id` lo genera el emisor**, y `submit_order` rechaza toda orden que
+  llegue sin él. Reenviar un identificador ya visto devuelve el mismo acuse con
+  `is_duplicate=True` y **no ejecuta de nuevo**. El generador es inyectable porque
+  reproducibilidad y unicidad entre reinicios no se satisfacen con uno solo:
+  `SequentialIds` (determinista) en simulación, `PrefixedSequentialIds` en vivo.
+- **La `RiskLayer` rechaza, nunca redimensiona.** Misma regla que `check_tradable`.
+  Recortar una orden al límite hace indistinguible "el agente pidió esto" de "el límite
+  lo recortó hasta acá". `GateDecision` no tiene dónde devolver una orden modificada.
+- **Los vetos de riesgo van en `SimResult.gate_rejections`, lista separada de los
+  rechazos del venue.** "El venue no pudo llenarla" y "nuestra capa no la dejó salir"
+  son diagnósticos distintos; agregarlos es el mismo error que agregar el gap a los costos.
+- **El kill switch permite cerrar, no abrir.** Bloquear todo deja la posición abierta
+  justo cuando algo salió mal. Solo pasan las órdenes que reducen exposición. La
+  reposición es manual: si se repusiera solo sería una pausa, no un kill switch.
+- **El ancla del límite de pérdida diaria es el equity con que cerró el día anterior**,
+  no el primero del día actual. Con barras diarias —donde una barra es un día— anclar a
+  la propia barra compara el equity contra sí mismo y el límite no muerde nunca.
+  Es pérdida diaria, no drawdown intradiario: el ancla es la apertura, no el máximo.
+- **`risk` depende de `sim`, nunca al revés.** La costura es el `Protocol`
+  `sim.gate.OrderGate`. El simulador no sabe que existe una política de riesgo, igual
+  que no lo sabe un broker real.
+
 ## Anti-patrones prohibidos
 
 - Normalizar con estadísticas calculadas sobre todo el dataset. Se ajusta solo en train.
@@ -190,7 +234,7 @@ Python 3.11+, `uv`, `gymnasium`, `stable-baselines3` (PPO/SAC), `polars`/`pandas
 ```
 src/
   data/       # instruments, schema, validation, calendars, adjustments, loaders, synthetic
-  sim/        # engine, costs, orders, portfolio, view
+  sim/        # engine, costs, orders, portfolio, view, venue, clock, ids, gate
   eval/       # métricas, walk-forward, tests estadísticos
   risk/       # RiskLayer independiente del agente
   features/   # técnicos y de noticias; transformadores fit-en-train
@@ -204,7 +248,9 @@ notebooks/    # solo exploración
 
 ## Etapas
 
-1. **Simulador + baselines + `eval/`.** Cerrada. `data/`, `sim/` y `eval/`, 247 tests, CI en verde.
+1. **Simulador + baselines + `eval/`.** Cerrada. `data/`, `sim/` y `eval/`, CI en verde.
+   Refactor de arquitectura para ejecución real aplicado sobre esta base: `ExecutionVenue`,
+   `Clock`, `client_order_id` y `risk/`. 330 tests.
 2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage.
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
 4. **Pipeline de noticias** con validación point-in-time estricta.

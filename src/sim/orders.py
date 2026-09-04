@@ -46,6 +46,9 @@ class RejectReason(StrEnum):
     INSUFFICIENT_POSITION = "INSUFFICIENT_POSITION"
     SHORT_NOT_ALLOWED = "SHORT_NOT_ALLOWED"
     NO_VOLUME = "NO_VOLUME"
+    # Rechazos de admision: ocurren al enviar, no al llenar.
+    MISSING_CLIENT_ORDER_ID = "MISSING_CLIENT_ORDER_ID"
+    VENUE_NOT_RUNNING = "VENUE_NOT_RUNNING"
 
     @classmethod
     def from_instrument(cls, reason: InstrumentRejectReason) -> RejectReason:
@@ -66,6 +69,10 @@ class MarketOrder:
 
     qty: float
     tag: str = ""
+    # Lo genera el emisor, no el venue. Vacio significa "todavia no asignado":
+    # el runner lo completa antes de enviar y el venue rechaza lo que llegue
+    # sin el. Ver `sim.ids` para por que el emisor y no el venue.
+    client_order_id: str = ""
 
     def __post_init__(self) -> None:
         if not np.isfinite(self.qty):
@@ -98,6 +105,7 @@ class Fill:
     participation: float
     reject_reason: RejectReason | None = None
     tag: str = ""
+    client_order_id: str = ""
 
     @property
     def transaction_costs(self) -> float:
