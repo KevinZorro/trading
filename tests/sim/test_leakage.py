@@ -8,6 +8,7 @@ aqui es un intento distinto de romper la barrera.
 from __future__ import annotations
 
 import contextlib
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -115,6 +116,23 @@ class TestNavegacionPorElArraySubyacente:
 
 
 class TestSuperficieDelMotor:
+    # Superficie publica permitida: `run`, que conduce el bucle, mas los cinco
+    # metodos de ExecutionVenue. Ninguno de los seis recibe ni devuelve una
+    # barra, y ninguno mueve el cursor `_t`; los tests de abajo lo verifican en
+    # vez de confiar en la lectura del codigo.
+    #
+    # La igualdad exacta es deliberada: si alguien agrega un metodo publico al
+    # motor, este test falla y obliga a justificarlo aca antes de que la Etapa 2
+    # pueda apoyarse en el.
+    SUPERFICIE_PERMITIDA: ClassVar[set[str]] = {
+        "run",
+        "submit_order",
+        "cancel_order",
+        "get_positions",
+        "get_fills",
+        "reconcile",
+    }
+
     def test_el_motor_no_expone_step(self, series) -> None:
         """Sin ``step()`` publico no hay forma de adelantar el cursor y mirar.
 
@@ -123,7 +141,38 @@ class TestSuperficieDelMotor:
         """
         simulator = Simulator(series, SimConfig(initial_cash=1_000.0))
         publicos = {a for a in dir(simulator) if not a.startswith("_")}
-        assert publicos == {"run"}
+        assert publicos == self.SUPERFICIE_PERMITIDA
+
+    def test_ningun_metodo_publico_adelanta_el_cursor(self, series) -> None:
+        """Lo que el test anterior protege, dicho como invariante.
+
+        No importa cuantos metodos publicos tenga el venue mientras ninguno
+        mueva ``_t``: el cursor lo mueve el bucle de ``run`` y nadie mas.
+        """
+        simulator = Simulator(series, SimConfig(initial_cash=1_000.0))
+        antes = simulator._t
+        simulator.get_positions()
+        simulator.get_fills()
+        simulator.reconcile()
+        simulator.cancel_order("inexistente")
+        simulator.submit_order(MarketOrder(qty=1.0, client_order_id="x-1"))
+        assert simulator._t == antes
+
+    def test_el_venue_detenido_no_ejecuta_nada(self, series) -> None:
+        """Enviar fuera del bucle se rechaza; no hay ejecucion sin barra."""
+        simulator = Simulator(series, SimConfig(initial_cash=1_000.0))
+        ack = simulator.submit_order(MarketOrder(qty=1.0, client_order_id="x-1"))
+        assert not ack.accepted
+        assert simulator.get_fills() == []
+        assert simulator.get_positions() == {}
+
+    def test_los_metodos_del_venue_no_devuelven_barras(self, series) -> None:
+        """Ninguna salida del protocolo referencia la serie ni una barra futura."""
+        simulator = Simulator(series, SimConfig(initial_cash=1_000.0))
+        estado = simulator.reconcile()
+        assert not isinstance(estado.timestamp, np.ndarray)
+        assert isinstance(estado.positions, dict)
+        assert isinstance(simulator.get_fills(), list)
 
     def test_la_estrategia_no_recibe_la_serie(self, series) -> None:
         recibidos: list[type] = []
