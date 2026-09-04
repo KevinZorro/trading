@@ -12,13 +12,101 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "ruff==0.8.4",
+    "mypy==1.14.0",
 ]
 
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 filterwarnings = ["error::RuntimeWarning"]
+markers = [
+    # Los tests de anti-leakage son la garantia central del proyecto. Se marcan
+    # para poder correrlos como job propio y visible en CI: su fallo no debe
+    # quedar como una linea mas entre cientos.
+    "leakage: verifica que no exista lookahead bias ni fuga de informacion",
+    # Tests caros (barridos de regimenes, series largas). Van a un job aparte
+    # para que el job principal se mantenga por debajo de los 5 minutos.
+    "slow: tarda lo suficiente como para no correr en el job principal",
+]
+
+# ---------------------------------------------------------------------------
+# coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    # Los cuerpos de los Protocol no se ejecutan nunca.
+    "^\\s*\\.\\.\\.$",
+    "raise NotImplementedError",
+]
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # comprensiones
+    "SIM",  # simplificaciones
+    "RUF",  # reglas propias de ruff
+    "NPY",  # numpy legacy (np.random.seed global, etc.)
+    "PT",   # convenciones de pytest
+]
+ignore = [
+    # El proyecto escribe en espanol sin tildes en identificadores y docstrings
+    # para evitar problemas de encoding; RUF002/003 marcan guiones y comillas
+    # tipograficas que aqui no aplican.
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Los tests declaran estrategias-espia con firmas que imitan el Protocol;
+# argumentos sin usar son parte del contrato, no descuido.
+"tests/*" = ["ARG002"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agents", "data", "envs", "eval", "features", "risk", "sim"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+# pandas no publica stubs en el paquete. pandas-stubs existe pero va a su
+# propio ritmo de versiones y contradice el pinneo estricto del resto; pandas
+# se usa solo en el borde de IO (loaders, validacion, sintetico) y nunca en el
+# motor de simulacion, donde el tipado si importa.
+module = ["pandas.*"]
+ignore_missing_imports = true
 
 [tool.uv]
 package = false
