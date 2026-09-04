@@ -16,9 +16,7 @@ from .conftest import make_frame
 
 
 @pytest.mark.parametrize("suffix", [".csv", ".parquet"])
-def test_round_trip_disco(
-    tmp_path, equity: InstrumentSpec, suffix: str
-) -> None:
+def test_round_trip_disco(tmp_path, equity: InstrumentSpec, suffix: str) -> None:
     frame = make_frame(n=12)
     path = tmp_path / f"bars{suffix}"
     if suffix == ".csv":
@@ -26,9 +24,7 @@ def test_round_trip_disco(
     else:
         frame.to_parquet(path, index=False)
 
-    series = load_bars(
-        path, instrument=equity, freq="1D", calendar=WeekdayCalendar()
-    )
+    series = load_bars(path, instrument=equity, freq="1D", calendar=WeekdayCalendar())
     assert len(series) == 12
     np.testing.assert_allclose(series.close, frame["close"].to_numpy())
     assert series.symbol == "TEST"

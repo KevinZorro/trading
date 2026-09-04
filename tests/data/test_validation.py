@@ -13,7 +13,7 @@ from data.errors import (
     DataValidationError,
     SchemaError,
 )
-from data.instruments import InstrumentSpec, us_equity_spec
+from data.instruments import InstrumentSpec
 from data.validation import validate_bars
 
 from .conftest import SESSION_TIME, make_frame
@@ -159,9 +159,7 @@ class TestCalendario:
         extra = frame.iloc[[0]].copy()
         extra["timestamp"] = weekend
         frame = (
-            pd.concat([frame, extra])
-            .sort_values("timestamp")
-            .reset_index(drop=True)
+            pd.concat([frame, extra]).sort_values("timestamp").reset_index(drop=True)
         )
         with pytest.raises(CalendarGapError, match="fuera del calendario"):
             validate_bars(

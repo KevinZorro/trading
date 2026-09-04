@@ -66,9 +66,13 @@ class WeekdayCalendar:
         session_time = start.time()
         days = pd.bdate_range(start=start.normalize(), end=end.normalize(), tz=UTC)
         if self.holidays:
-            days = days[~pd.Series(days.date, index=days).isin(self.holidays).to_numpy()]
+            es_feriado = pd.Series(days.date, index=days).isin(self.holidays)
+            days = days[~es_feriado.to_numpy()]
         return pd.DatetimeIndex(
-            [pd.Timestamp.combine(d.date(), session_time).tz_localize(UTC) for d in days]
+            [
+                pd.Timestamp.combine(d.date(), session_time).tz_localize(UTC)
+                for d in days
+            ]
         )
 
 

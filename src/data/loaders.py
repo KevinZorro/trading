@@ -63,7 +63,10 @@ def bars_from_frame(
     return BarSeries(
         instrument=instrument,
         freq=freq,
-        timestamp=frame["timestamp"].dt.tz_convert("UTC").dt.tz_localize(None).to_numpy("datetime64[ns]"),
+        timestamp=frame["timestamp"]
+        .dt.tz_convert("UTC")
+        .dt.tz_localize(None)
+        .to_numpy("datetime64[ns]"),
         source=source,
         **{f: frame[f].to_numpy(dtype="float64") for f in OHLCV_FIELDS + EVENT_FIELDS},
     )

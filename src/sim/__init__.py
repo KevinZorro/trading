@@ -29,8 +29,8 @@ from sim.costs import (
 from sim.engine import (
     LONG_ONLY_ACTION_RANGE,
     SimConfig,
-    Simulator,
     SimResult,
+    Simulator,
     Strategy,
 )
 from sim.orders import Fill, MarketOrder, OrderStatus, RejectReason

@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# Entornos y gestor de paquetes
+.venv/
+venv/
+# uv.lock SI se versiona: la reproducibilidad exige dependencias pinneadas.
+
+# Testing y calidad
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Artefactos de experimentos: se regeneran desde config + seed.
+mlruns/
+wandb/
+outputs/
+*.ckpt
+
+# Datos crudos: nunca en git.
+data/raw/
+data/interim/
+*.parquet.tmp
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Editores y SO
+.DS_Store
+.idea/
+.vscode/
+*.swp

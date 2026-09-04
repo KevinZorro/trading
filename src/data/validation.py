@@ -7,15 +7,17 @@ resultados que nadie puede auditar despues.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import pandas as pd
 
+from data.calendars import Calendar
 from data.errors import (
     AdjustedPriceError,
     CalendarGapError,
     DataValidationError,
     SchemaError,
 )
-from data.calendars import Calendar
 from data.instruments import InstrumentSpec
 from data.schema import (
     ADJUSTED_COLUMN_HINTS,
@@ -28,11 +30,11 @@ from data.schema import (
 _MAX_REPORTED = 10
 
 
-def _sample(values) -> str:
-    values = list(values)
-    head = ", ".join(str(v) for v in values[:_MAX_REPORTED])
-    if len(values) > _MAX_REPORTED:
-        head += f", ... (+{len(values) - _MAX_REPORTED} mas)"
+def _sample(values: Iterable[object]) -> str:
+    listado = list(values)
+    head = ", ".join(str(v) for v in listado[:_MAX_REPORTED])
+    if len(listado) > _MAX_REPORTED:
+        head += f", ... (+{len(listado) - _MAX_REPORTED} mas)"
     return head
 
 
@@ -59,9 +61,7 @@ def check_schema(frame: pd.DataFrame) -> None:
         raise SchemaError(f"columnas requeridas ausentes: {missing}")
     for column in OHLCV_FIELDS + tuple(f for f in EVENT_FIELDS if f in frame.columns):
         if not pd.api.types.is_numeric_dtype(frame[column]):
-            raise SchemaError(
-                f"{column} debe ser numerica, es {frame[column].dtype}"
-            )
+            raise SchemaError(f"{column} debe ser numerica, es {frame[column].dtype}")
 
 
 def check_timestamps(frame: pd.DataFrame) -> None:

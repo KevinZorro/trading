@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Una corrida por rama: un push nuevo cancela el anterior.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Determinismo: sin esto el orden de iteracion de sets y dicts con claves
+  # str varia entre corridas y un test puede pasar o fallar segun el dia.
+  PYTHONHASHSEED: "0"
+  UV_FROZEN: "1"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # El job que importa. Los tests de anti-leakage son la garantia central
+  # del proyecto: si el simulador filtra informacion del futuro, todos los
+  # resultados del estudio son ruido. Corren solos, primero y con nombre
+  # propio, para que su fallo sea inconfundible y no una linea entre 173.
+  # ---------------------------------------------------------------------
+  anti-leakage:
+    name: "Anti-leakage (garantia central del estudio)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Instalar dependencias pinneadas
+        run: uv sync --frozen --python 3.11
+      - name: Tests de anti-leakage
+        run: uv run pytest -m leakage -v
+      - name: Fallar si no se recogio ningun test de anti-leakage
+        # Red de seguridad contra un marcador mal escrito. pytest ya devuelve 5
+        # ("ningun test recogido") en ese caso y el paso anterior fallaria, pero
+        # con un mensaje que no dice por que; este lo dice.
+        #
+        # `-o addopts=` es necesario: pyproject ya pasa -q, y un segundo -q
+        # sube el nivel de silencio a -qq, donde --collect-only imprime solo el
+        # conteo por archivo y no los node IDs. Sin esto el grep cuenta 0 y el
+        # job falla con los 14 tests en verde.
+        run: |
+          n=$(uv run pytest -o addopts= -m leakage --collect-only -q \
+                | grep -c '::' || true)
+          echo "tests de anti-leakage recogidos: $n"
+          if [ "$n" -lt 1 ]; then
+            echo "::error::el job de anti-leakage no recogio ningun test"
+            exit 1
+          fi
+
+  lint:
+    name: "Lint (ruff)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen --python 3.11
+      - name: ruff check
+        run: uv run ruff check src tests
+      - name: ruff format --check
+        run: uv run ruff format --check src tests
+
+  types:
+    name: "Tipos (mypy --strict)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen --python 3.11
+      - name: mypy strict sobre src/
+        run: uv run mypy src
+
+  tests:
+    name: "Tests + cobertura (py${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Instalar dependencias pinneadas
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+      - name: Verificar que las dependencias quedaron en la version pinneada
+        run: uv lock --check
+      - name: Suite rapida con cobertura
+        # El umbral esta en pyproject (fail_under = 85). Se repite aqui para
+        # que el fallo diga el numero en el log del job.
+        run: uv run pytest -m "not slow" --cov --cov-report=term-missing --cov-fail-under=85
+      - name: Reporte de duraciones
+        if: always()
+        run: uv run pytest -m "not slow" --collect-only -q | tail -1
+
+  slow:
+    name: "Tests lentos"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen --python 3.11
+      - name: Suite lenta
+        run: |
+          set +e
+          uv run pytest -m slow
+          codigo=$?
+          set -e
+          # 5 = "ningun test recogido". Hoy no hay tests marcados slow; el job
+          # existe para que el primero que aparezca (barridos de regimen y
+          # capital de la Etapa 6) tenga donde correr sin empujar el job
+          # principal por encima de los 5 minutos.
+          if [ "$codigo" -ne 0 ] && [ "$codigo" -ne 5 ]; then
+            exit "$codigo"
+          fi
+
+  # Check unico y estable para la proteccion de rama: los nombres de los jobs
+  # de la matriz cambian al agregar una version de Python, este no.
+  ci-ok:
+    name: "CI OK"
+    if: always()
+    needs: [anti-leakage, lint, types, tests, slow]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar que ningun job dependiente fallo
+        run: |
+          echo "anti-leakage: ${{ needs.anti-leakage.result }}"
+          echo "lint:         ${{ needs.lint.result }}"
+          echo "types:        ${{ needs.types.result }}"
+          echo "tests:        ${{ needs.tests.result }}"
+          echo "slow:         ${{ needs.slow.result }}"
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            exit 1
+          fi

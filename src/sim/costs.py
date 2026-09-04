@@ -16,9 +16,8 @@ import math
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-import numpy as np
-
 from data.instruments import CommissionSchema, InstrumentSpec
+from data.schema import FloatArray
 
 
 @dataclass(frozen=True)
@@ -30,14 +29,17 @@ class SpreadContext:
     """
 
     ref_price: float
-    high: np.ndarray
-    low: np.ndarray
-    close: np.ndarray
+    high: FloatArray
+    low: FloatArray
+    close: FloatArray
 
 
 @runtime_checkable
 class SpreadModel(Protocol):
-    name: str
+    # De solo lectura a proposito: las implementaciones son dataclasses
+    # frozen y un `name: str` en el Protocol exigiria un atributo asignable.
+    @property
+    def name(self) -> str: ...
 
     def half_spread(self, ctx: SpreadContext) -> float:
         """Medio spread en unidades monetarias. Siempre >= 0."""
@@ -113,7 +115,8 @@ class CorwinSchultzSpread:
 
 @runtime_checkable
 class SlippageModel(Protocol):
-    name: str
+    @property
+    def name(self) -> str: ...
 
     def impact(self, participation: float) -> float:
         """Impacto como fraccion del precio de referencia. Siempre >= 0."""
@@ -160,7 +163,8 @@ class SqrtSlippage:
 
 @runtime_checkable
 class CommissionModel(Protocol):
-    name: str
+    @property
+    def name(self) -> str: ...
 
     def compute(self, qty: float, price: float) -> float:
         """Comision en unidades monetarias. Siempre >= 0."""

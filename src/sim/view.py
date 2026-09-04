@@ -23,13 +23,18 @@ import numpy as np
 
 from data.errors import LookaheadError
 from data.instruments import InstrumentSpec
-from data.schema import OHLCV_FIELDS, BarSeries
+from data.schema import OHLCV_FIELDS, BarSeries, FloatArray, TimeArray
 
 
 class MarketView:
     """Vista inmutable de la serie hasta la barra ``t`` inclusive."""
 
     __slots__ = ("_fields", "_instrument", "_t", "_timestamp")
+
+    _fields: dict[str, FloatArray]
+    _timestamp: TimeArray
+    _instrument: InstrumentSpec
+    _t: int
 
     def __init__(self, series: BarSeries, t: int) -> None:
         if not 0 <= t < len(series):
@@ -49,7 +54,8 @@ class MarketView:
 
     @property
     def timestamp(self) -> np.datetime64:
-        return self._timestamp[-1]
+        ultimo: np.datetime64 = self._timestamp[-1]
+        return ultimo
 
     @property
     def instrument(self) -> InstrumentSpec:
@@ -78,7 +84,8 @@ class MarketView:
             )
         if lookback > self._t:
             raise IndexError(
-                f"lookback={lookback} excede la historia disponible ({len(self)} barras)"
+                f"lookback={lookback} excede la historia disponible "
+                f"({len(self)} barras)"
             )
         return float(self._fields[field][-1 - lookback])
 
@@ -99,7 +106,7 @@ class MarketView:
 
     # -- acceso vectorial -----------------------------------------------
 
-    def history(self, field: str, n: int) -> np.ndarray:
+    def history(self, field: str, n: int) -> FloatArray:
         """Ultimas ``n`` barras de ``field``, terminando en ``t``.
 
         Devuelve una copia de solo lectura: ni se puede mutar la serie ni se
@@ -111,20 +118,21 @@ class MarketView:
             raise ValueError("n debe ser positivo")
         if n > len(self):
             raise IndexError(
-                f"se pidieron {n} barras y solo hay {len(self)} disponibles en t={self._t}"
+                f"se pidieron {n} barras y solo hay {len(self)} "
+                f"disponibles en t={self._t}"
             )
         out = np.array(self._fields[field][-n:], dtype=np.float64, copy=True)
         out.flags.writeable = False
         return out
 
-    def log_returns(self, n: int) -> np.ndarray:
+    def log_returns(self, n: int) -> FloatArray:
         """Retornos logaritmicos de cierre de las ultimas ``n`` barras.
 
         Los precios crudos no son estacionarios; esta es la forma preferida de
         consumir la serie desde una estrategia.
         """
         closes = self.history("close", n + 1)
-        out = np.log(closes[1:] / closes[:-1])
+        out: FloatArray = np.log(closes[1:] / closes[:-1])
         out.flags.writeable = False
         return out
 

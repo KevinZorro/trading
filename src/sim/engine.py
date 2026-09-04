@@ -20,15 +20,14 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from data.instruments import RejectReason as InstrumentRejectReason
-from data.schema import BarSeries
+from data.schema import BarSeries, FloatArray, TimeArray
 from sim.costs import (
     CommissionModel,
+    NoSlippage,
     SlippageModel,
     SpreadContext,
     SpreadModel,
     ZeroSpread,
-    NoSlippage,
     commission_from_instrument,
 )
 from sim.orders import Fill, MarketOrder, OrderStatus, RejectReason
@@ -97,7 +96,7 @@ class SimConfig:
     def rate_per_bar(self) -> float:
         if self.cash_rate == 0.0:
             return 0.0
-        return (1.0 + self.cash_rate) ** (1.0 / self.bars_per_year) - 1.0
+        return float((1.0 + self.cash_rate) ** (1.0 / self.bars_per_year) - 1.0)
 
     def describe(self) -> dict[str, object]:
         return {
@@ -117,12 +116,12 @@ class SimConfig:
 class SimResult:
     """Salida de una corrida: series por barra, log de fills y configuracion."""
 
-    equity: np.ndarray
-    equity_liquidation: np.ndarray
-    cash: np.ndarray
-    position: np.ndarray
-    interest: np.ndarray
-    timestamp: np.ndarray
+    equity: FloatArray
+    equity_liquidation: FloatArray
+    cash: FloatArray
+    position: FloatArray
+    interest: FloatArray
+    timestamp: TimeArray
     fills: list[Fill]
     config: dict[str, object]
     series_meta: dict[str, object]
@@ -236,15 +235,16 @@ class Simulator:
         bar_volume = float(series.volume[t_fill])
         sign = 1.0 if order.qty > 0 else -1.0
 
-        reject = lambda reason, participation=0.0: self._reject(  # noqa: E731
-            order=order,
-            t_decision=t_decision,
-            t_fill=t_fill,
-            decision_price=decision_price,
-            ref_price=ref_price,
-            reason=reason,
-            participation=participation,
-        )
+        def reject(reason: RejectReason, participation: float = 0.0) -> Fill:
+            return self._reject(
+                order=order,
+                t_decision=t_decision,
+                t_fill=t_fill,
+                decision_price=decision_price,
+                ref_price=ref_price,
+                reason=reason,
+                participation=participation,
+            )
 
         if bar_volume <= 0.0:
             return reject(RejectReason.NO_VOLUME)
@@ -257,9 +257,7 @@ class Simulator:
         partial = abs(qty_capped) < abs(order.qty) - 1e-12
 
         # 2. Restricciones del instrumento (lote, cantidad y nocional minimos).
-        qty_filled, instrument_reason = instrument.check_tradable(
-            qty_capped, ref_price
-        )
+        qty_filled, instrument_reason = instrument.check_tradable(qty_capped, ref_price)
         participation = abs(qty_filled) / bar_volume if bar_volume else 0.0
         if instrument_reason is not None:
             return reject(

@@ -11,14 +11,21 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from data.errors import SchemaError
 from data.instruments import InstrumentSpec
 
+# Alias de los arrays de la serie. Todas las columnas numericas son 1-D,
+# float64 y de solo lectura; nombrarlas evita repetir la anotacion completa
+# en cada firma y hace que mypy strict verifique de verdad los bordes.
+FloatArray = npt.NDArray[np.float64]
+TimeArray = npt.NDArray[np.datetime64]
+
 PRICE_FIELDS: tuple[str, ...] = ("open", "high", "low", "close")
-OHLCV_FIELDS: tuple[str, ...] = PRICE_FIELDS + ("volume",)
+OHLCV_FIELDS: tuple[str, ...] = (*PRICE_FIELDS, "volume")
 EVENT_FIELDS: tuple[str, ...] = ("split_factor", "cash_dividend")
-REQUIRED_COLUMNS: tuple[str, ...] = ("timestamp",) + OHLCV_FIELDS + ("symbol",)
+REQUIRED_COLUMNS: tuple[str, ...] = ("timestamp", *OHLCV_FIELDS, "symbol")
 OPTIONAL_COLUMNS: tuple[str, ...] = EVENT_FIELDS
 
 # Nombres que delatan precios ajustados retroactivamente. Si aparecen en la
@@ -34,7 +41,7 @@ ADJUSTED_COLUMN_HINTS: tuple[str, ...] = (
 )
 
 
-def _freeze(array: np.ndarray, name: str, dtype: Any) -> np.ndarray:
+def _freeze(array: npt.ArrayLike, name: str, dtype: Any) -> npt.NDArray[Any]:
     """Copia a un array contiguo de solo lectura.
 
     La inmutabilidad no es estetica: el ``MarketView`` del simulador entrega
@@ -58,14 +65,14 @@ class BarSeries:
 
     instrument: InstrumentSpec
     freq: str
-    timestamp: np.ndarray
-    open: np.ndarray
-    high: np.ndarray
-    low: np.ndarray
-    close: np.ndarray
-    volume: np.ndarray
-    split_factor: np.ndarray
-    cash_dividend: np.ndarray
+    timestamp: TimeArray
+    open: FloatArray
+    high: FloatArray
+    low: FloatArray
+    close: FloatArray
+    volume: FloatArray
+    split_factor: FloatArray
+    cash_dividend: FloatArray
     source: str = "unknown"
 
     def __post_init__(self) -> None:
@@ -95,11 +102,12 @@ class BarSeries:
     def __len__(self) -> int:
         return len(self.timestamp)
 
-    def field(self, name: str) -> np.ndarray:
+    def field(self, name: str) -> npt.NDArray[Any]:
         """Devuelve un campo por nombre; el array sigue siendo de solo lectura."""
         if name not in OHLCV_FIELDS + EVENT_FIELDS + ("timestamp",):
             raise SchemaError(f"campo desconocido: {name!r}")
-        return getattr(self, name)
+        column: npt.NDArray[Any] = getattr(self, name)
+        return column
 
     def slice(self, start: int, stop: int) -> BarSeries:
         """Sub-serie ``[start, stop)``. Usado por el walk-forward."""

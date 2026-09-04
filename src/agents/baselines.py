@@ -38,9 +38,7 @@ class BuyAndHold:
     def reset(self, seed: int | None = None) -> None:
         self._done = False
 
-    def on_bar(
-        self, view: MarketView, account: AccountSnapshot
-    ) -> MarketOrder | None:
+    def on_bar(self, view: MarketView, account: AccountSnapshot) -> MarketOrder | None:
         if self._done:
             return None
         if account.position > 0:
@@ -90,9 +88,7 @@ class RandomAgent:
     def reset(self, seed: int | None = None) -> None:
         self._rng = np.random.default_rng(self.seed if seed is None else seed)
 
-    def on_bar(
-        self, view: MarketView, account: AccountSnapshot
-    ) -> MarketOrder | None:
+    def on_bar(self, view: MarketView, account: AccountSnapshot) -> MarketOrder | None:
         if self._rng.random() >= self.trade_prob:
             return None
         instrument = view.instrument
@@ -116,9 +112,7 @@ class MovingAverageCross:
 
     name = "ma_cross"
 
-    def __init__(
-        self, *, fast: int = 20, slow: int = 50, safety: float = 0.98
-    ) -> None:
+    def __init__(self, *, fast: int = 20, slow: int = 50, safety: float = 0.98) -> None:
         if fast < 1 or slow < 1:
             raise ValueError("las ventanas deben ser positivas")
         if fast >= slow:
@@ -135,9 +129,7 @@ class MovingAverageCross:
         window = closes[: len(closes) - lookback] if lookback else closes
         return float(window[-self.fast :].mean()) > float(window[-self.slow :].mean())
 
-    def on_bar(
-        self, view: MarketView, account: AccountSnapshot
-    ) -> MarketOrder | None:
+    def on_bar(self, view: MarketView, account: AccountSnapshot) -> MarketOrder | None:
         # Hace falta una barra extra para conocer el estado anterior y detectar
         # el cruce en vez del nivel.
         if len(view) < self.slow + 1:
