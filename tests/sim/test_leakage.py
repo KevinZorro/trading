@@ -35,9 +35,7 @@ class _Espia:
         self.errores = []
         self.vistos = []
 
-    def on_bar(
-        self, view: MarketView, account: AccountSnapshot
-    ) -> MarketOrder | None:
+    def on_bar(self, view: MarketView, account: AccountSnapshot) -> MarketOrder | None:
         try:
             self.vistos.append(self.intento(view))
         except Exception as exc:
@@ -167,9 +165,7 @@ class TestConsistenciaTemporalDeLaEjecucion:
         assert fill.decision_price == 100.0  # close de t
         assert fill.ref_price == 105.0  # open de t+1, no de t
 
-    def test_una_orden_en_la_ultima_barra_expira(
-        self, equity: InstrumentSpec
-    ) -> None:
+    def test_una_orden_en_la_ultima_barra_expira(self, equity: InstrumentSpec) -> None:
         """No hay barra siguiente donde ejecutarla: no se pierde, se registra."""
         series = make_series(equity, [100.0, 101.0, 102.0])
 

@@ -124,9 +124,7 @@ class TestSpecInvalida:
             ({"min_notional": -1.0}, "los minimos no pueden ser negativos"),
         ],
     )
-    def test_parametros_invalidos(
-        self, kwargs: dict[str, object], match: str
-    ) -> None:
+    def test_parametros_invalidos(self, kwargs: dict[str, object], match: str) -> None:
         base: dict[str, object] = {
             "symbol": "X",
             "venue": "TEST",

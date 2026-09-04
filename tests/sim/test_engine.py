@@ -157,9 +157,7 @@ class TestMonotoniaDeCostos:
         retornos = []
         for bps in (0.0, 10.0, 50.0):
             config = SimConfig(initial_cash=100_000.0, spread=FixedBpsSpread(bps=bps))
-            result = Simulator(series, config).run(
-                MovingAverageCross(fast=5, slow=20)
-            )
+            result = Simulator(series, config).run(MovingAverageCross(fast=5, slow=20))
             retornos.append(result.equity[-1])
         assert retornos == sorted(retornos, reverse=True)
 
@@ -204,9 +202,9 @@ class TestConservacion:
     def test_el_remanente_parcial_se_cancela(self, fractional: InstrumentSpec) -> None:
         """No se arrastra a la barra siguiente: una sola ejecucion."""
         series = make_series(fractional, [100.0] * 6, volume=1_000.0)
-        result = Simulator(
-            series, SimConfig(initial_cash=1_000_000.0)
-        ).run(CompraUnaVez(qty=5_000.0))
+        result = Simulator(series, SimConfig(initial_cash=1_000_000.0)).run(
+            CompraUnaVez(qty=5_000.0)
+        )
         assert len(result.fills) == 1
         assert result.position[-1] == pytest.approx(100.0)
 
@@ -296,9 +294,7 @@ class TestGapSeparadoDeCostos:
                     return MarketOrder(qty=-10.0)
                 return None
 
-        result = Simulator(series, SimConfig(initial_cash=10_000.0)).run(
-            CompraYVende()
-        )
+        result = Simulator(series, SimConfig(initial_cash=10_000.0)).run(CompraYVende())
         venta = result.fills[1]
         # Vender con el mercado en gap al alza es favorable: gap negativo.
         assert venta.qty_filled == -10.0
@@ -496,9 +492,7 @@ class TestConfiguracion:
             ({"cash_rate": -0.01}, "cash_rate no puede ser negativo"),
         ],
     )
-    def test_parametros_invalidos(
-        self, kwargs: dict[str, object], match: str
-    ) -> None:
+    def test_parametros_invalidos(self, kwargs: dict[str, object], match: str) -> None:
         base: dict[str, object] = {"initial_cash": 1_000.0}
         with pytest.raises(ValueError, match=match):
             SimConfig(**{**base, **kwargs})  # type: ignore[arg-type]

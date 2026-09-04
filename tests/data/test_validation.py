@@ -159,9 +159,7 @@ class TestCalendario:
         extra = frame.iloc[[0]].copy()
         extra["timestamp"] = weekend
         frame = (
-            pd.concat([frame, extra])
-            .sort_values("timestamp")
-            .reset_index(drop=True)
+            pd.concat([frame, extra]).sort_values("timestamp").reset_index(drop=True)
         )
         with pytest.raises(CalendarGapError, match="fuera del calendario"):
             validate_bars(

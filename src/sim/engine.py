@@ -256,9 +256,7 @@ class Simulator:
         partial = abs(qty_capped) < abs(order.qty) - 1e-12
 
         # 2. Restricciones del instrumento (lote, cantidad y nocional minimos).
-        qty_filled, instrument_reason = instrument.check_tradable(
-            qty_capped, ref_price
-        )
+        qty_filled, instrument_reason = instrument.check_tradable(qty_capped, ref_price)
         participation = abs(qty_filled) / bar_volume if bar_volume else 0.0
         if instrument_reason is not None:
             return reject(

@@ -59,9 +59,7 @@ def check_schema(frame: pd.DataFrame) -> None:
         raise SchemaError(f"columnas requeridas ausentes: {missing}")
     for column in OHLCV_FIELDS + tuple(f for f in EVENT_FIELDS if f in frame.columns):
         if not pd.api.types.is_numeric_dtype(frame[column]):
-            raise SchemaError(
-                f"{column} debe ser numerica, es {frame[column].dtype}"
-            )
+            raise SchemaError(f"{column} debe ser numerica, es {frame[column].dtype}")
 
 
 def check_timestamps(frame: pd.DataFrame) -> None:
