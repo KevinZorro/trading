@@ -212,6 +212,70 @@ para el porqué de cada uno y el inventario de lo que falta para operar en vivo.
   `sim.gate.OrderGate`. El simulador no sabe que existe una política de riesgo, igual
   que no lo sabe un broker real.
 
+## Invariantes del entorno Gymnasium
+
+Consolidados en la Etapa 2. El env es un **wrapper delgado**: rutea, no calcula.
+
+- **`Simulator.drive()` es la costura de inversión de control.** Generador que cede en
+  cada punto de decisión y recibe la orden por `send()`. Se admite como séptimo método
+  público porque **`send` fusiona avanzar y decidir en una operación atómica**: para
+  llegar a `t+1` hay que entregar la decisión de `t`, así que no se puede adelantar el
+  cursor, mirar y volver. `next(gen)` equivale a `send(None)`, o sea "decidí no operar".
+- **`run` y `drive` son dos bucles públicos, no dos implementaciones.** Los cuatro pasos
+  por barra (`_start`, `_open_bar`, `_dispatch`, `_finish`) son la única copia de la
+  contabilidad. Si agregas un tercer bucle, consume esos helpers.
+- **La garantía anti-leakage del env vive en `ObservationBuilder.build`, que recibe solo
+  una `Decision`.** El generador no puede impedir que el env tenga la `BarSeries` —la
+  necesita para construir el simulador—, así que la garantía es estructural en el
+  constructor de la observación. Hay un test que compara dos series idénticas hasta `t`
+  y distintas después, y exige observaciones bit-idénticas.
+- **Dimensionar es ejecución: `sim.sizing.TargetWeightSizer`, no el env.** El env y
+  cualquier estrategia directa usan el mismo sizer. Si el env tuviera el suyo, el
+  backtest dejaría de corresponder al simulador validado.
+- **El sizer no pre-redondea a cero ni recorta contra el cash.** `round_qty` redondea
+  hacia cero: redondear ahí convertiría un delta chico en `qty=0` y la orden
+  desaparecería del log. Se manda sin redondear y el venue rechaza con su motivo.
+  `deadband=0.0` por defecto; una banda muerta se configura explícita y se serializa.
+- **`safety` define qué significa la acción, no censura órdenes.** Un peso de 1.0 es "lo
+  más invertido que se puede estar sin conocer el precio de ejecución" (98% por defecto).
+  Estar exactamente all-in exigiría lookahead.
+- **El recorte de la acción a `[0,1]` se registra** en `ClipEvent` y en `info`. Un agente
+  entrenado sobre un rango que el env recorta en silencio aprende sobre un mundo que no
+  existe. Una acción no finita es un error, no un recorte.
+- **La observación distingue "no quise" de "no pude"** con tres columnas separadas:
+  `last_order_blocked` (veto de riesgo), `last_order_rejected` (rechazo del venue) y
+  `last_fill_ratio`. La posición observada es la **realmente llenada**, del ledger.
+- **La normalización se ajusta solo con train** (`fit_scaler_on_train` recorre
+  `MarketView` sobre la porción de train, así que la serie de test no está en el objeto)
+  y el escalador se serializa con el env. No se reajusta nunca, ni en test ni en vivo.
+- **El reward se calcula sobre `equity_mark`**, que ya pagó comisión, spread y slippage:
+  los costos están dentro por construcción, no restados después. No se usa
+  `equity_liquidation` porque cobraría la fricción de salida en cada barra cuando en la
+  realidad se paga una vez; la brecha entre ambas series va como feature para que el
+  agente la vea.
+- **El env no puentea la `RiskLayer`**: la pasa a `drive()` para que se aplique en el
+  mismo punto que en vivo. Se recibe como **fábrica**, no como instancia: la capa acumula
+  estado por episodio y reusarla arrastraría el kill switch de uno al siguiente.
+- **El episodio arranca después del calentamiento** de los indicadores, enviando `None`
+  en cada barra previa. Esas barras quedan en el `SimResult` sin fills, que es la verdad.
+- **Gymnasium**: `terminated=True` solo por ruina (equity <= 0); agotarse los datos es
+  `truncated=True`. La acción del último paso **expira sin ejecutarse** y da reward 0.
+
+### Sobre el sintético de Heston como test de sanidad
+
+`generate_gbm_sv` es GBM con volatilidad estocástica: `E[r_{t+1} | F_t] = mu·dt`
+constante e independiente de la historia. **La dirección es impredecible por
+construcción.** Un agente que no supera a buy-and-hold en retorno total sobre Heston
+no tiene un bug: está en lo correcto, porque estar fuera del mercado cuesta drift y
+además paga costos. Lo único explotable es el drift (que buy-and-hold captura entero) y
+la volatilidad, que sí es mean-reverting y predecible.
+
+El criterio de sanidad válido sobre Heston es más débil: **el agente debe converger a
+estar casi totalmente invertido y no debe rotar**. Para un test de "¿puede aprender una
+señal?" hace falta un fixture con estructura direccional deliberada (AR(1) con
+reversión, alternancia de régimen), etiquetado como fixture y nunca como dataset de
+investigación. Queda pendiente para la Etapa 3.
+
 ## Anti-patrones prohibidos
 
 - Normalizar con estadísticas calculadas sobre todo el dataset. Se ajusta solo en train.
@@ -234,11 +298,11 @@ Python 3.11+, `uv`, `gymnasium`, `stable-baselines3` (PPO/SAC), `polars`/`pandas
 ```
 src/
   data/       # instruments, schema, validation, calendars, adjustments, loaders, synthetic
-  sim/        # engine, costs, orders, portfolio, view, venue, clock, ids, gate
+  sim/        # engine, costs, orders, portfolio, view, venue, clock, ids, gate, sizing
   eval/       # métricas, walk-forward, tests estadísticos
   risk/       # RiskLayer independiente del agente
-  features/   # técnicos y de noticias; transformadores fit-en-train
-  envs/       # entornos Gymnasium sobre el simulador (wrapper delgado, sin lógica propia)
+  features/   # technical (RSI, MACD, ATR, Bollinger), scaler fit-en-train
+  envs/       # trading_env, observation, rewards (wrapper delgado, sin lógica propia)
   agents/     # baselines (buy-and-hold, aleatorio, cruce de medias) y wrappers PPO/SAC
   configs/
 tests/
@@ -251,7 +315,8 @@ notebooks/    # solo exploración
 1. **Simulador + baselines + `eval/`.** Cerrada. `data/`, `sim/` y `eval/`, CI en verde.
    Refactor de arquitectura para ejecución real aplicado sobre esta base: `ExecutionVenue`,
    `Clock`, `client_order_id` y `risk/`. 330 tests.
-2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage.
+2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage. Cerrada.
+   `envs/`, `features/` y `sim/sizing.py`; `drive()` como costura. 478 tests.
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
 4. **Pipeline de noticias** con validación point-in-time estricta.
 5. **Agente B** y comparación controlada contra A.

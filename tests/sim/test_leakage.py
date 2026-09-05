@@ -126,6 +126,13 @@ class TestSuperficieDelMotor:
     # pueda apoyarse en el.
     SUPERFICIE_PERMITIDA: ClassVar[set[str]] = {
         "run",
+        # `drive` cede el control en cada punto de decision para que el entorno
+        # Gymnasium de la Etapa 2 pueda tener su step(). Se admite porque
+        # `send` fusiona avanzar y decidir en una operacion atomica: para llegar
+        # a t+1 hay que entregar la decision de t, asi que no se puede adelantar
+        # el cursor, mirar y volver. Los tests de TestGeneradorNoAdelantaElCursor
+        # lo verifican en vez de confiar en este comentario.
+        "drive",
         "submit_order",
         "cancel_order",
         "get_positions",
@@ -174,6 +181,74 @@ class TestSuperficieDelMotor:
         assert isinstance(estado.positions, dict)
         assert isinstance(simulator.get_fills(), list)
 
+
+class TestGeneradorNoAdelantaElCursor:
+    """`drive` es un trinquete: avanzar cuesta entregar la decision.
+
+    Es la propiedad que justifica exponer un generador publico donde el
+    proyecto prohibe un `step()`. Un `step()` que avanzara sin consumir una
+    decision dejaria leer la barra siguiente antes de decidir; `send` no.
+    """
+
+    def test_la_primera_barra_llega_sin_haber_decidido_nada(self, series) -> None:
+        gen = Simulator(series, SimConfig(initial_cash=1_000.0)).drive()
+        primera = next(gen)
+        assert primera.view.t == 0
+        gen.close()
+
+    def test_avanzar_exige_entregar_una_decision(self, series) -> None:
+        """No hay forma de obtener la vista de t+1 sin haber decidido en t."""
+        gen = Simulator(series, SimConfig(initial_cash=1_000.0)).drive()
+        primera = next(gen)
+        # `send` es el unico camino a la barra siguiente, y consume la decision.
+        segunda = gen.send(None)
+        assert primera.view.t == 0
+        assert segunda.view.t == 1
+        gen.close()
+
+    def test_next_equivale_a_no_operar_no_a_un_avance_gratis(self, series) -> None:
+        """`next(gen)` es `send(None)`: decidir no operar, no espiar."""
+        sim_a = Simulator(series, SimConfig(initial_cash=1_000.0))
+        gen_a = sim_a.drive()
+        next(gen_a)
+        for _ in range(len(series) - 1):
+            next(gen_a)
+        with pytest.raises(StopIteration) as fin_a:
+            next(gen_a)
+
+        sim_b = Simulator(series, SimConfig(initial_cash=1_000.0))
+        gen_b = sim_b.drive()
+        gen_b.send(None)
+        for _ in range(len(series) - 1):
+            gen_b.send(None)
+        with pytest.raises(StopIteration) as fin_b:
+            gen_b.send(None)
+
+        np.testing.assert_allclose(fin_a.value.value.equity, fin_b.value.value.equity)
+        assert fin_a.value.value.fills == fin_b.value.value.fills == []
+
+    def test_la_decision_no_referencia_barras_futuras(self, series) -> None:
+        """Cada Decision trae una vista limitada a [0..t], como on_bar."""
+        gen = Simulator(series, SimConfig(initial_cash=1_000.0)).drive()
+        vistos = []
+        decision = next(gen)
+        while True:
+            vistos.append(len(decision.view))
+            try:
+                decision = gen.send(None)
+            except StopIteration:
+                break
+        assert vistos == list(range(1, len(series) + 1))
+
+    def test_la_vista_de_la_decision_rechaza_el_futuro(self, series) -> None:
+        gen = Simulator(series, SimConfig(initial_cash=1_000.0)).drive()
+        decision = next(gen)
+        with pytest.raises(LookaheadError):
+            decision.view.close(-1)
+        gen.close()
+
+
+class TestSuperficieDelMotorContinuacion:
     def test_la_estrategia_no_recibe_la_serie(self, series) -> None:
         recibidos: list[type] = []
 

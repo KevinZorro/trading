@@ -41,5 +41,5 @@ falla con `NetworkAccessError`. Los datos se cargan de archivos locales o se gen
 
 ## Estado
 
-Etapa 1 (simulador, baselines y métricas) cerrada. Ver la sección "Etapas" de
-`CLAUDE.md`.
+Etapas 1 (simulador, baselines y métricas) y 2 (entorno Gymnasium) cerradas.
+Ver la sección "Etapas" de `CLAUDE.md`.
