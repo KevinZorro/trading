@@ -69,6 +69,18 @@ Los cinco criterios, tal como quedaron declarados:
 | 3 | **sin criterio** | Adaptarse y memorizar son dos hallazgos válidos. Poner un umbral sería inventar una hipótesis después del hecho. |
 | 4 | tiempo invertido mediano ≥ 0.80 y exceso de crecimiento sobre estar siempre invertido ≤ 0.05 | Sobre Heston el óptimo **es** estar invertido. Ganarle a una serie sin señal es sobreajuste. |
 
+La rotación **no** es criterio en el nivel 4, aunque el enunciado del protocolo
+diga "sin rotar". El único baseline con rotación comparable sería estar siempre
+invertido, que rebalancea al peso objetivo en cada barra igual que el agente,
+mientras que `BuyAndHold` compra una vez y su rotación anualizada es ~0.05: un
+criterio contra esa referencia daría ratios de tres cifras y fallaría siempre,
+incluso para un agente perfectamente convergido. Lo que sí captura "no rota" es
+el tiempo invertido: un agente que se queda dentro el 95% del tiempo no está
+entrando y saliendo. Un umbral de rotación llegó a estar declarado en
+`ProtocolThresholds` sin aplicarse en el veredicto; se quitó al detectarlo,
+antes de correr el nivel 4. Un criterio declarado que no se evalúa es peor que
+no tenerlo, porque el reporte afirma haberlo verificado.
+
 El nivel 3 tiene veredicto `MEASURED`, un tercer valor junto a `PASS` y `FAIL`.
 Forzarlo a binario habría obligado a inventar una hipótesis.
 

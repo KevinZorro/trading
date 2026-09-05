@@ -80,10 +80,15 @@ class ProtocolThresholds:
       banda de no-operar. Un 10% menos de rotacion es el minimo detectable por
       encima del ruido; si el agente opera **igual** con y sin costos, la
       penalizacion no esta llegando al reward.
-    - ``level_4_max_turnover_ratio = 2.0``: sobre Heston el optimo es estar
-      siempre invertido, cuya rotacion no es cero (el rebalanceo al peso
-      objetivo opera un poco cada barra). El criterio es relativo a esa
-      referencia, no absoluto.
+    - **La rotacion no es criterio en el nivel 4, y esto es deliberado.** Se
+      reporta como evidencia pero no entra en el veredicto: el unico baseline
+      con rotacion comparable seria "estar siempre invertido", que rebalancea al
+      peso objetivo en cada barra igual que el agente, mientras que
+      ``BuyAndHold`` compra una vez y su rotacion anualizada es ~0.05. Un
+      criterio contra esa referencia daria ratios de tres cifras y fallaria
+      siempre, incluso para un agente perfectamente convergido. Lo que si
+      captura "no rota" es ``level_4_min_time_invested``: un agente que se queda
+      invertido el 95% del tiempo no esta entrando y saliendo.
     - ``level_4_max_median_excess = 0.05``: si la mediana del exceso de
       crecimiento sobre estar siempre invertido supera un 5%, el agente esta
       extrayendo algo de una serie donde no hay nada que extraer, y eso hay que
@@ -94,7 +99,6 @@ class ProtocolThresholds:
     level_1_monotonia_tol: float = 0.10
     level_1_min_capture_highest_snr: float = 0.50
     level_2_min_turnover_drop: float = 0.10
-    level_4_max_turnover_ratio: float = 2.0
     level_4_max_median_excess: float = 0.05
     level_4_min_time_invested: float = 0.80
 
@@ -676,10 +680,10 @@ def evaluate_level_4(arm: ArmResult, thresholds: ProtocolThresholds) -> LevelRes
     referencia-.
     """
     criterio = (
-        f"rotacion mediana <= {thresholds.level_4_max_turnover_ratio:.1f}x la de "
-        f"estar siempre invertido, tiempo invertido mediano >= "
-        f"{thresholds.level_4_min_time_invested:.0%}, y exceso de crecimiento "
-        f"mediano <= {thresholds.level_4_max_median_excess:.2f}"
+        f"tiempo invertido mediano >= {thresholds.level_4_min_time_invested:.0%} "
+        f"y exceso de crecimiento mediano sobre estar siempre invertido <= "
+        f"{thresholds.level_4_max_median_excess:.2f}. La rotacion se reporta pero "
+        "no entra en el veredicto (ver ProtocolThresholds)"
     )
     rotacion = arm.median("turnover_annualized")
     invertido = arm.median("time_invested")
@@ -694,11 +698,6 @@ def evaluate_level_4(arm: ArmResult, thresholds: ProtocolThresholds) -> LevelRes
             "faltan metricas para juzgar el nivel",
             (arm,),
         )
-    # Buy-and-hold compra una vez: su rotacion es casi cero y no sirve de
-    # referencia para un agente que rebalancea. La referencia correcta es el
-    # techo, que aca coincide con estar siempre invertido rebalanceando.
-    rotacion_referencia = max(referencia, 1e-9)
-    ratio = rotacion / rotacion_referencia if rotacion_referencia > 0 else float("inf")
     ok = (
         exceso <= thresholds.level_4_max_median_excess
         and invertido >= thresholds.level_4_min_time_invested
@@ -719,7 +718,6 @@ def evaluate_level_4(arm: ArmResult, thresholds: ProtocolThresholds) -> LevelRes
             ". No converge a estar invertido: sobre Heston estar afuera cuesta "
             "drift y no compra nada."
         )
-    del ratio
     return LevelResult(
         4,
         "control negativo (Heston)",
