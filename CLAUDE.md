@@ -276,6 +276,59 @@ señal?" hace falta un fixture con estructura direccional deliberada (AR(1) con
 reversión, alternancia de régimen), etiquetado como fixture y nunca como dataset de
 investigación. Queda pendiente para la Etapa 3.
 
+## Invariantes de los fixtures de validación (Etapa 3)
+
+Ver `docs/adr/0002-fixtures-sinteticos-de-validacion.md`. Cinco niveles en
+`data/fixtures.py`, cada uno aislando un fallo distinto.
+
+- **Son infraestructura de validación, no datos de investigación.** Ningún
+  resultado del estudio se reporta sobre ellos. La etiqueta no vive solo en el
+  docstring: `series.source` empieza con `fixture:` y `Fixture` lo exige, así que
+  viaja dentro de `SimResult.config` y cualquier corrida sobre un fixture es
+  identificable en el tracking.
+- **La señal va embebida en el precio, nunca en una columna aparte.** La
+  observación del entorno es cerrada; una columna exógena sería invisible para el
+  agente. El estado predictivo es el último log-retorno, o sea la feature
+  `log_return_{lookback-1}`. Consecuencia: los niveles 0 y 1 validan el
+  **pipeline**, no el descubrimiento de una señal escondida.
+- **`SignalSpec` se parametriza por momentos estacionarios** (`drift`,
+  `sigma_target`), no por `mu` y `sigma`. Así `R² = beta²` exactamente y la
+  distribución marginal no se mueve al barrer el SNR ni al invertir el régimen.
+  Sin eso, SNR y régimen de volatilidad quedarían confundidos.
+- **Gap cero y sin redondeo a tick**, e instrumento sin mínimos ni lote. El techo
+  tiene que ser exacto y alcanzable; un rechazo por `MIN_NOTIONAL` haría que el
+  agente no lo alcanzara por un motivo ajeno a aprender. Estos fixtures **no**
+  ejercitan gap ni restricciones de venue: eso es la Etapa 1 y el barrido de
+  capital de la Etapa 6.
+- **El camino intra-barra existe y no es decorativo.** Sin él
+  `high = max(open, close)` y Corwin-Schultz devuelve cero: el nivel 2 correría
+  con el spread apagado en silencio.
+- **El techo se expone como curvas de equity, no como un número**, para que
+  `eval.metrics` se aplique tal cual. `informed` es la barra a superar;
+  `clairvoyant` es cota dura y **nunca** criterio de aprobación.
+- **`ceilings(safety=...)` se pide con el `safety` con el que se corre.** Con
+  `safety=1.0` el techo es teórico: el venue rechaza la orden por
+  `INSUFFICIENT_CASH` porque no deja con qué pagar spread y comisión. Y la
+  dirección del efecto no está garantizada sobre un camino realizado: exponerse
+  menos puede terminar mejor. No escribas la aserción al revés.
+- **Criterio único de los techos: equity terminal.** El reward del entorno (suma
+  de retornos simples) tiene un óptimo a `sigma²/2` de distancia; queda declarado,
+  no disimulado.
+- **El óptimo del nivel 2 es numérico y se declara como tal.** Bellman de
+  recompensa media sobre `(r_t, posición)`, resuelto en grilla. Se valida contra
+  el umbral cerrado en el límite de costo cero y contra el clarividente por
+  arriba. Su salida es una banda de no-operar que es cero **si y solo si** los
+  costos son cero: esa banda *es* "operar selectivamente".
+- **`Ceilings.capture()` devuelve `None` en el nivel 4, no `0.0`.** Sin brecha
+  entre el techo y estar invertido la fracción no está definida, y un cero se
+  leería como "no capturó nada" en vez de "no había nada que capturar". Mismo
+  criterio que `win_rate` sin trades cerrados.
+- **La banda de Bartlett (`1.96/sqrt(n)`) no aplica a los retornos de Heston.**
+  Supone iid; con varianza condicional agrupada el estimador de la
+  autocorrelación tiene más varianza. Con la banda ingenua el control negativo
+  falla en lags aislados con series sanas. Se usa el error estándar robusto para
+  diferencias de martingala.
+
 ## Anti-patrones prohibidos
 
 - Normalizar con estadísticas calculadas sobre todo el dataset. Se ajusta solo en train.
@@ -297,7 +350,8 @@ Python 3.11+, `uv`, `gymnasium`, `stable-baselines3` (PPO/SAC), `polars`/`pandas
 
 ```
 src/
-  data/       # instruments, schema, validation, calendars, adjustments, loaders, synthetic
+  data/       # instruments, schema, validation, calendars, adjustments, loaders,
+              # synthetic, fixtures (validacion con optimo conocido)
   sim/        # engine, costs, orders, portfolio, view, venue, clock, ids, gate, sizing
   eval/       # métricas, walk-forward, tests estadísticos
   risk/       # RiskLayer independiente del agente
@@ -318,6 +372,9 @@ notebooks/    # solo exploración
 2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage. Cerrada.
    `envs/`, `features/` y `sim/sizing.py`; `drive()` como costura. 478 tests.
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
+   Primera mitad cerrada: fixtures sintéticos con señal conocida y óptimo calculable
+   (`data/fixtures.py`), la escalera de cinco niveles que valida el pipeline antes de
+   mirar datos reales.
 4. **Pipeline de noticias** con validación point-in-time estricta.
 5. **Agente B** y comparación controlada contra A.
 6. **Barrido** de regímenes y capital. `PortfolioSimulator` multi-activo.
