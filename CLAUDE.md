@@ -329,6 +329,55 @@ Ver `docs/adr/0002-fixtures-sinteticos-de-validacion.md`. Cinco niveles en
   falla en lags aislados con series sanas. Se usa el error estándar robusto para
   diferencias de martingala.
 
+## Invariantes del Agente A y del protocolo (Etapa 3)
+
+Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
+
+- **`torch` y `stable-baselines3` son el grupo opcional `rl`**, que
+  `uv sync --frozen` no instala: la rueda de torch de PyPI arrastra el stack de
+  CUDA (>3 GB) y sacaría al job principal de CI de sus 5 minutos. El núcleo de
+  `agents/` —protocolo, reporte por semillas, walk-forward— no depende de torch
+  y se testea con políticas deterministas inyectadas. El import de SB3 es
+  diferido. **Consecuencia declarada: el adaptador de SB3 no está cubierto por
+  el CI**; su test lleva el marcador `rl` y se saltea donde el grupo no está.
+- **El agente y los baselines arrancan en la misma barra.** `WarmupDelay`
+  envuelve una `Strategy` para que no opere antes del calentamiento. Sin eso, las
+  26 barras de ventaja son retorno regalado a uno de los dos y la diferencia
+  medida deja de ser atribuible a la estrategia. El techo se pide con el mismo
+  `first_decision` y el mismo `safety`.
+- **Los criterios de aprobación se declaran antes de correr** (`ProtocolThresholds`)
+  y viajan serializados con el resultado. Un umbral elegido después de ver los
+  números no es un criterio, es una descripción.
+- **El protocolo para en el primer fallo** y deja los niveles no corridos como
+  `SKIPPED` con su motivo. Un reporte con tres niveles y sin explicación se lee
+  como si el protocolo tuviera tres niveles.
+- **Hay tres veredictos, no dos.** El nivel 3 es `MEASURED`: adaptarse y
+  memorizar son ambos hallazgos válidos, y forzar un PASS/FAIL sería inventar
+  una hipótesis después del hecho.
+- **El criterio del nivel 2 está sobre la rotación, no sobre el retorno.**
+  Rendir menos con costos es automático —se restan del equity aunque el agente
+  los ignore—; lo que prueba que la penalización llegó al reward es el cambio de
+  comportamiento.
+- **La métrica del barrido de SNR es `capture`, no el retorno crudo.** Al bajar
+  el SNR el techo baja también, así que sin normalizar la degradación se mide a
+  sí misma.
+- **`summarize` falla con menos de 10 semillas.** El escape explícito enciende
+  `below_minimum_seeds`, que sale en el JSON y en el render. Se puede producir un
+  resultado con pocas semillas; lo que no se puede es que parezca uno con muchas.
+- **Entrenar y juzgar son dos comandos** (`agents.cli arm` / `assemble`). Los
+  criterios se aplican siempre sobre resultados guardados: revisar un umbral no
+  exige reentrenar, y si alguien lo cambia después de ver los números, se ve en
+  el diff. `ArmResult.from_dict` recalcula las distribuciones desde las corridas
+  en vez de leerlas.
+- **La política recurrente es una opción y se corre donde tiene sentido.** En
+  los niveles 0, 1 y 2 el estado es completamente observable (el óptimo depende
+  solo de `r_t`, que está en la observación) y la memoria solo agrega parámetros
+  que sobreajustar. Donde importa es en el nivel 3.
+- **Walk-forward: los tests de ventanas consecutivas no se solapan** con el paso
+  por defecto, y `coverage` reporta `overlapping_test_bars` cuando sí. Con tests
+  solapados hay más observaciones que información independiente, y hay que
+  decirlo antes de calcular cualquier estadístico con ellas.
+
 ## Anti-patrones prohibidos
 
 - Normalizar con estadísticas calculadas sobre todo el dataset. Se ajusta solo en train.
@@ -353,11 +402,11 @@ src/
   data/       # instruments, schema, validation, calendars, adjustments, loaders,
               # synthetic, fixtures (validacion con optimo conocido)
   sim/        # engine, costs, orders, portfolio, view, venue, clock, ids, gate, sizing
-  eval/       # métricas, walk-forward, tests estadísticos
+  eval/       # metrics, report, trades, walkforward, distribution (semillas + DSR)
   risk/       # RiskLayer independiente del agente
   features/   # technical (RSI, MACD, ATR, Bollinger), scaler fit-en-train
   envs/       # trading_env, observation, rewards (wrapper delgado, sin lógica propia)
-  agents/     # baselines (buy-and-hold, aleatorio, cruce de medias) y wrappers PPO/SAC
+  agents/     # baselines, policy, runner, ppo (grupo opcional), protocol, cli
   configs/
 tests/
 docs/adr/
@@ -372,9 +421,10 @@ notebooks/    # solo exploración
 2. **Entorno Gymnasium** como wrapper delgado, con tests de anti-leakage. Cerrada.
    `envs/`, `features/` y `sim/sizing.py`; `drive()` como costura. 478 tests.
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
-   Primera mitad cerrada: fixtures sintéticos con señal conocida y óptimo calculable
-   (`data/fixtures.py`), la escalera de cinco niveles que valida el pipeline antes de
-   mirar datos reales.
+   Fixtures sintéticos con señal conocida y óptimo calculable (`data/fixtures.py`) y
+   PPO con el protocolo de validación de cinco niveles (`agents/`). **Pendiente el paso
+   6**: datos reales con walk-forward, que necesita un dataset versionado que todavía
+   no existe en el repositorio.
 4. **Pipeline de noticias** con validación point-in-time estricta.
 5. **Agente B** y comparación controlada contra A.
 6. **Barrido** de regímenes y capital. `PortfolioSimulator` multi-activo.
