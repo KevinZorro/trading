@@ -23,6 +23,7 @@ al enviar y **ejecucion** al llenar.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from dataclasses import dataclass, field, replace
 from typing import Protocol, runtime_checkable
 
@@ -129,6 +130,41 @@ class SimConfig:
             "latency_bars": self.latency_bars,
             "run_id": self.run_id,
         }
+
+
+@dataclass(frozen=True)
+class Decision:
+    """Lo que el motor entrega en el punto de decision de la barra ``t``.
+
+    Es el paquete que consume :meth:`Simulator.drive`. Todo lo que lleva es del
+    presente o del pasado: ``view`` esta limitada a ``[0..t]``, y el fill y el
+    veto son de la barra que acaba de abrir y de la decision anterior. No hay
+    forma de leer ``t+1`` desde aca.
+
+    ``last_fill`` y ``last_gate_rejection`` existen para que quien decide pueda
+    distinguir "no quise operar" de "no pude": sin ellos, una orden rechazada y
+    una orden nunca enviada se ven exactamente igual desde la posicion.
+    """
+
+    view: MarketView
+    account: AccountSnapshot
+    equity_liquidation: float
+    last_fill: Fill | None = None
+    last_gate_rejection: GateRejection | None = None
+
+
+@dataclass
+class _RunState:
+    """Estado mutable de una corrida. Privado: lo comparten ``run`` y ``drive``."""
+
+    n: int
+    equity: FloatArray
+    equity_liquidation: FloatArray
+    cash: FloatArray
+    position: FloatArray
+    interest: FloatArray
+    fills_vetados: list[GateRejection] = field(default_factory=list)
+    ultimo_veto: GateRejection | None = None
 
 
 @dataclass(frozen=True)
@@ -494,28 +530,16 @@ class Simulator:
         commission = self._commission.compute(position, exit_price)
         return ledger.cash + position * exit_price - commission
 
-    # -- bucle principal ------------------------------------------------
+    # -- pasos compartidos por run y drive ------------------------------
+    #
+    # `run` y `drive` son dos bucles publicos independientes, pero NO dos
+    # implementaciones: los cuatro pasos de abajo son la unica copia de la
+    # contabilidad. Duplicar el cuerpo del bucle haria que el entorno de la
+    # Etapa 2 y el motor divergieran con el tiempo, que es exactamente lo que
+    # el wrapper delgado tiene que evitar.
 
-    def run(
-        self,
-        strategy: Strategy,
-        *,
-        seed: int | None = None,
-        gate: OrderGate | None = None,
-    ) -> SimResult:
-        """Corre la estrategia completa. Unica entrada publica del motor.
-
-        ``gate`` es la capa de riesgo. Se aplica **entre** la decision de la
-        estrategia y el envio al venue, que es exactamente el mismo punto en el
-        que la aplicara el runner en vivo. Sin gate el comportamiento es el de
-        siempre.
-        """
-        series = self._series
-        config = self._config
-        symbol = series.symbol
-        n = len(series)
-
-        strategy.reset(seed)
+    def _start(self, seed: int | None) -> _RunState:
+        """Reinicia el venue, reconcilia y reserva las series de salida."""
         self._reset_venue()
 
         # Reconciliacion de arranque. En simulacion no puede sorprender a nadie;
@@ -528,97 +552,138 @@ class Simulator:
                 f"{estado_inicial.positions!r}"
             )
 
-        equity = np.empty(n)
-        equity_liq = np.empty(n)
-        cash_series = np.empty(n)
-        position_series = np.empty(n)
-        interest_series = np.zeros(n)
-        vetadas: list[GateRejection] = []
+        n = len(self._series)
+        return _RunState(
+            n=n,
+            equity=np.empty(n),
+            equity_liquidation=np.empty(n),
+            cash=np.empty(n),
+            position=np.empty(n),
+            interest=np.zeros(n),
+        )
 
-        for t in range(n):
-            self._t = t
-            if isinstance(self._clock, SimulatedClock):
-                self._clock.advance_to(series.timestamp[t])
+    def _open_bar(self, t: int, state: _RunState, gate: OrderGate | None) -> Decision:
+        """Abre la barra ``t``: interes, ejecucion pendiente y marca a close.
 
-            # 1. Interes sobre el cash del periodo anterior.
-            if t > 0:
-                interest_series[t] = self._ledger.accrue_interest(config.rate_per_bar)
+        Devuelve el paquete de decision. Todo lo que ocurre aca pasa **antes**
+        de que nadie decida nada, y usa solo datos de ``t`` hacia atras.
+        """
+        series = self._series
+        config = self._config
+        symbol = series.symbol
 
-            # 2. Ejecucion de lo decidido en t-1, al open de t.
-            if self._pending is not None:
-                fill = self._execute(self._pending, self._pending_t, t)
-                self._fills.append(fill)
-                self._pending = None
-                self._pending_t = -1
-                if gate is not None:
-                    gate.observe_fill(fill)
+        self._t = t
+        if isinstance(self._clock, SimulatedClock):
+            self._clock.advance_to(series.timestamp[t])
 
-            # 3. Marca a close de t.
-            close = float(series.close[t])
-            equity[t] = self._ledger.mark_to_market({symbol: close})
-            equity_liq[t] = self._liquidation_equity(self._ledger, t)
-            cash_series[t] = self._ledger.cash
-            position_series[t] = self._ledger.position(symbol)
-            if config.check_accounting:
-                self._ledger.check_identity(equity[t], {symbol: close})
+        # 1. Interes sobre el cash del periodo anterior.
+        if t > 0:
+            state.interest[t] = self._ledger.accrue_interest(config.rate_per_bar)
 
-            # 4. Decision con datos hasta t. La ventana no referencia t+1.
-            view = MarketView(series, t)
-            account = AccountSnapshot(
-                t=t,
-                cash=self._ledger.cash,
-                position=self._ledger.position(symbol),
-                mark_price=close,
-                equity=equity[t],
-                pending_qty=0.0,
-            )
-            if gate is not None:
-                gate.observe_bar(account)
-
-            order = strategy.on_bar(view, account)
-            if order is not None:
-                if not isinstance(order, MarketOrder):
-                    raise TypeError(
-                        f"on_bar debe devolver MarketOrder o None, devolvio "
-                        f"{type(order).__name__}"
-                    )
-                if order.qty == 0.0:
-                    order = None
-
-            if order is None:
-                continue
-
-            # 5. El emisor pone el identificador antes de enviar. Una estrategia
-            #    puede traer el suyo; si no, lo asigna el runner.
-            if not order.client_order_id:
-                order = replace(order, client_order_id=self._order_ids.next_id())
-
-            # 6. Capa de riesgo. Rechaza, nunca redimensiona: redimensionar en
-            #    silencio hace indistinguible "el agente pidio esto" de "el
-            #    limite lo recorto hasta aca".
-            if gate is not None:
-                decision = gate.check(order, account)
-                if not decision.approved:
-                    vetadas.append(
-                        GateRejection(
-                            t_decision=t,
-                            timestamp_decision=series.timestamp[t],
-                            symbol=symbol,
-                            client_order_id=order.client_order_id,
-                            qty_requested=order.qty,
-                            reason=decision.reason,
-                            detail=decision.detail,
-                            tag=order.tag,
-                        )
-                    )
-                    continue
-
-            # 7. Envio al venue. El acuse no es un fill.
-            self.submit_order(order)
-
-        # Una orden encolada en la ultima barra no tiene barra de ejecucion. Se
-        # registra como expirada en vez de perderse.
+        # 2. Ejecucion de lo decidido en t-1, al open de t.
+        fill: Fill | None = None
         if self._pending is not None:
+            fill = self._execute(self._pending, self._pending_t, t)
+            self._fills.append(fill)
+            self._pending = None
+            self._pending_t = -1
+            if gate is not None:
+                gate.observe_fill(fill)
+
+        # 3. Marca a close de t.
+        close = float(series.close[t])
+        state.equity[t] = self._ledger.mark_to_market({symbol: close})
+        state.equity_liquidation[t] = self._liquidation_equity(self._ledger, t)
+        state.cash[t] = self._ledger.cash
+        state.position[t] = self._ledger.position(symbol)
+        if config.check_accounting:
+            self._ledger.check_identity(state.equity[t], {symbol: close})
+
+        # 4. Paquete de decision con datos hasta t. La ventana no referencia t+1.
+        account = AccountSnapshot(
+            t=t,
+            cash=self._ledger.cash,
+            position=self._ledger.position(symbol),
+            mark_price=close,
+            equity=state.equity[t],
+            pending_qty=0.0,
+        )
+        if gate is not None:
+            gate.observe_bar(account)
+
+        veto = state.ultimo_veto
+        state.ultimo_veto = None
+        return Decision(
+            view=MarketView(series, t),
+            account=account,
+            equity_liquidation=float(state.equity_liquidation[t]),
+            last_fill=fill,
+            last_gate_rejection=veto,
+        )
+
+    def _dispatch(
+        self,
+        order: MarketOrder | None,
+        t: int,
+        state: _RunState,
+        gate: OrderGate | None,
+    ) -> None:
+        """Identificador, capa de riesgo y envio al venue. Cierra la barra ``t``."""
+        if order is not None:
+            if not isinstance(order, MarketOrder):
+                raise TypeError(
+                    f"la decision debe ser MarketOrder o None, se recibio "
+                    f"{type(order).__name__}"
+                )
+            if order.qty == 0.0:
+                order = None
+        if order is None:
+            return
+
+        # El emisor pone el identificador antes de enviar. Quien decide puede
+        # traer el suyo; si no, lo asigna el runner.
+        if not order.client_order_id:
+            order = replace(order, client_order_id=self._order_ids.next_id())
+
+        # Capa de riesgo. Rechaza, nunca redimensiona: redimensionar en silencio
+        # hace indistinguible "el agente pidio esto" de "el limite lo recorto
+        # hasta aca".
+        if gate is not None:
+            decision = gate.check(order, self._account_actual(t, state))
+            if not decision.approved:
+                veto = GateRejection(
+                    t_decision=t,
+                    timestamp_decision=self._series.timestamp[t],
+                    symbol=self._series.symbol,
+                    client_order_id=order.client_order_id,
+                    qty_requested=order.qty,
+                    reason=decision.reason,
+                    detail=decision.detail,
+                    tag=order.tag,
+                )
+                state.fills_vetados.append(veto)
+                state.ultimo_veto = veto
+                return
+
+        # Envio al venue. El acuse no es un fill.
+        self.submit_order(order)
+
+    def _account_actual(self, t: int, state: _RunState) -> AccountSnapshot:
+        return AccountSnapshot(
+            t=t,
+            cash=float(state.cash[t]),
+            position=float(state.position[t]),
+            mark_price=float(self._series.close[t]),
+            equity=float(state.equity[t]),
+            pending_qty=0.0,
+        )
+
+    def _finish(self, state: _RunState, strategy_name: str) -> SimResult:
+        """Expira lo que quedo encolado y arma el resultado."""
+        series = self._series
+        if self._pending is not None:
+            # Una orden encolada en la ultima barra no tiene barra de ejecucion.
+            # Se registra como expirada en vez de perderse.
             expirada = self._pending
             t_exp = self._pending_t
             cierre = float(series.close[t_exp])
@@ -628,7 +693,7 @@ class Simulator:
                     t_fill=t_exp,
                     timestamp_decision=series.timestamp[t_exp],
                     timestamp_fill=series.timestamp[t_exp],
-                    symbol=symbol,
+                    symbol=series.symbol,
                     status=OrderStatus.EXPIRED,
                     qty_requested=expirada.qty,
                     qty_filled=0.0,
@@ -648,15 +713,79 @@ class Simulator:
             self._pending_t = -1
 
         return SimResult(
-            equity=equity,
-            equity_liquidation=equity_liq,
-            cash=cash_series,
-            position=position_series,
-            interest=interest_series,
+            equity=state.equity,
+            equity_liquidation=state.equity_liquidation,
+            cash=state.cash,
+            position=state.position,
+            interest=state.interest,
             timestamp=series.timestamp,
             fills=list(self._fills),
-            config=config.describe(),
+            config=self._config.describe(),
             series_meta=series.meta(),
-            strategy_name=getattr(strategy, "name", type(strategy).__name__),
-            gate_rejections=vetadas,
+            strategy_name=strategy_name,
+            gate_rejections=state.fills_vetados,
         )
+
+    # -- bucles publicos ------------------------------------------------
+
+    def run(
+        self,
+        strategy: Strategy,
+        *,
+        seed: int | None = None,
+        gate: OrderGate | None = None,
+    ) -> SimResult:
+        """Corre la estrategia completa. El motor conduce el bucle.
+
+        ``gate`` es la capa de riesgo. Se aplica **entre** la decision de la
+        estrategia y el envio al venue, que es exactamente el mismo punto en el
+        que la aplicara el runner en vivo. Sin gate el comportamiento es el de
+        siempre.
+        """
+        strategy.reset(seed)
+        state = self._start(seed)
+        for t in range(state.n):
+            decision = self._open_bar(t, state, gate)
+            orden = strategy.on_bar(decision.view, decision.account)
+            self._dispatch(orden, t, state, gate)
+        return self._finish(state, getattr(strategy, "name", type(strategy).__name__))
+
+    def drive(
+        self,
+        *,
+        seed: int | None = None,
+        gate: OrderGate | None = None,
+        name: str = "driven",
+    ) -> Generator[Decision, MarketOrder | None, SimResult]:
+        """Cede el control en cada punto de decision. Devuelve el ``SimResult``.
+
+        Es la costura para el entorno Gymnasium de la Etapa 2, que necesita un
+        ``step()`` llamado desde afuera mientras el motor conserva el bucle.
+        Se usa asi::
+
+            gen = simulator.drive()
+            decision = next(gen)
+            while True:
+                try:
+                    decision = gen.send(mi_orden(decision))
+                except StopIteration as fin:
+                    resultado = fin.value
+                    break
+
+        **No abre lookahead, y esa es la razon de elegir un generador.** Para
+        llegar a ``t+1`` hay que entregar la decision de ``t``: ``send`` fusiona
+        avanzar y decidir en una sola operacion atomica. No se puede adelantar,
+        mirar y volver, porque el avance *es* el compromiso. ``next(gen)``
+        equivale a ``send(None)``, es decir "decidi no operar": tampoco es un
+        avance gratis.
+
+        Lo que este metodo no puede garantizar es que el caller no tenga la
+        ``BarSeries`` por su cuenta. Esa garantia vive en el constructor de la
+        observacion del entorno, que recibe solo la ``Decision``.
+        """
+        state = self._start(seed)
+        for t in range(state.n):
+            decision = self._open_bar(t, state, gate)
+            orden = yield decision
+            self._dispatch(orden, t, state, gate)
+        return self._finish(state, name)
