@@ -440,3 +440,76 @@ def test_el_techo_del_brazo_usa_el_mismo_safety_que_el_sizer() -> None:
     equity = np.asarray(resultado.runs[0].total_return_mark)
     referencia = resultado.ceiling["always_long_total_return"]
     assert float(equity) == pytest.approx(float(referencia), rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# La referencia del memorizador (nivel 3)
+# ---------------------------------------------------------------------------
+
+
+def test_el_memorizador_se_calcula_sobre_el_tramo_de_evaluacion() -> None:
+    """La regla del regimen viejo aplicada al tramo nuevo, que es lo que hace un
+    agente que memorizo.
+
+    Sin este numero el nivel 3 puede decir que el agente rindio mal pero no por
+    que: no haber aprendido nada y aplicar con conviccion la regla anterior son
+    dos diagnosticos distintos, y solo el segundo es memorizacion.
+    """
+    from data.fixtures import level_3_regime_flip
+
+    fixture = level_3_regime_flip(2_000, seed=20240115)
+    resultado = run_arm(
+        fixture,
+        label="level_3",
+        seeds=[1],
+        ppo_config=PPOConfig(total_timesteps=1),
+        policy_factory=lambda _f, _s: ConstantWeightPolicy(1.0),
+        allow_fewer_seeds=True,
+    )
+    assert "memorizer_total_return" in resultado.ceiling
+    assert "memorizer_capture" in resultado.ceiling
+    # Aplicar la regla del regimen viejo al nuevo destruye capital: su capture
+    # queda muy por debajo del de estar siempre invertido, que es cero.
+    assert float(resultado.ceiling["memorizer_capture"]) < 0.0
+
+
+def test_un_fixture_sin_flip_no_tiene_memorizador() -> None:
+    """Donde no hay cambio de regimen la referencia no significa nada."""
+    resultado = run_arm(
+        level_1_noisy(500, seed=20240115),
+        label="level_1",
+        seeds=[1],
+        ppo_config=PPOConfig(total_timesteps=1),
+        policy_factory=lambda _f, _s: ConstantWeightPolicy(1.0),
+        allow_fewer_seeds=True,
+    )
+    assert "memorizer_capture" not in resultado.ceiling
+
+
+def test_el_nivel_3_distingue_memorizar_de_adaptarse() -> None:
+    """Los dos son resultados validos; lo que no es valido es no distinguirlos."""
+
+    def con_memorizador(label: str, capture: float) -> ArmResult:
+        arm = brazo(label, capture=capture)
+        return ArmResult(
+            label=arm.label,
+            fixture_name=arm.fixture_name,
+            fixture_config=arm.fixture_config,
+            ppo_config=arm.ppo_config,
+            runs=arm.runs,
+            distributions=arm.distributions,
+            ceiling={**arm.ceiling, "memorizer_capture": -1.0},
+            baselines=arm.baselines,
+        )
+
+    resultado = evaluate_level_3(
+        [
+            con_memorizador("memorizador", -0.72),
+            con_memorizador("adaptado", 0.80),
+            con_memorizador("intermedio", 0.20),
+        ]
+    )
+    assert resultado.verdict is Verdict.MEASURED
+    assert "memorizador: MEMORIZA" in resultado.finding
+    assert "adaptado: SE ADAPTA" in resultado.finding
+    assert "intermedio: se adapta parcialmente" in resultado.finding

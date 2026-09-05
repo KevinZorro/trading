@@ -28,7 +28,7 @@ datos de investigacion- y reservarlo mantiene la misma disciplina en todos lados
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
@@ -43,7 +43,14 @@ from agents.runner import (
     run_policy,
     scaler_for,
 )
-from data.fixtures import Ceilings, Fixture
+from data.fixtures import (
+    Ceilings,
+    Fixture,
+    evaluate_states,
+    myopic_states,
+    periodic_rate_per_bar,
+)
+from data.schema import FloatArray
 from envs.observation import ObservationSpec
 from envs.rewards import NetReturnReward
 from envs.trading_env import EnvConfig
@@ -384,6 +391,14 @@ def run_arm(
         )
 
     calentamiento = env_config.observation.warmup
+    memorizador = _memorizer_curve(
+        fixture,
+        validacion,
+        safety=safety,
+        rate_per_bar=periodic_rate_per_bar(cash_rate, 252.0),
+        initial_cash=initial_cash,
+        first_decision=calentamiento,
+    )
     techos = validacion.ceilings(
         safety=safety,
         cash_rate=cash_rate,
@@ -417,7 +432,7 @@ def run_arm(
         ppo_config=ppo_config.describe(),
         runs=tuple(corridas),
         distributions=distribuciones,
-        ceiling=_ceiling_summary(techos, initial_cash),
+        ceiling=_ceiling_summary(techos, initial_cash, memorizador),
         baselines={k: _baseline_summary(v) for k, v in referencias.items()},
     )
 
@@ -436,7 +451,56 @@ def _distribuciones(
     }
 
 
-def _ceiling_summary(ceilings: Ceilings, initial_cash: float) -> dict[str, Any]:
+def _memorizer_curve(
+    parent: Fixture,
+    segment: Fixture,
+    *,
+    safety: float,
+    rate_per_bar: float,
+    initial_cash: float,
+    first_decision: int,
+) -> FloatArray | None:
+    """La regla del regimen **viejo** aplicada al tramo de evaluacion.
+
+    Es la referencia contra la que se mide "memoriza": exactamente lo que hace un
+    agente que aprendio la primera mitad y no noto el cambio. Sin este numero, el
+    nivel 3 reporta que el agente rindio mal y no puede decir **por que**: rendir
+    mal por no haber aprendido nada y rendir mal por aplicar con conviccion la
+    regla anterior son dos diagnosticos distintos, y solo el segundo es
+    "memorizacion".
+
+    Devuelve ``None`` cuando el fixture no tiene cambio de regimen, que es donde
+    la referencia no significa nada.
+    """
+    if parent.spec.flip_at is None:
+        return None
+    viejo = replace(
+        segment.spec,
+        beta=parent.spec.beta,
+        beta_after_flip=None,
+        flip_at=None,
+    )
+    estados = myopic_states(
+        viejo.conditional_mean(segment.signal),
+        np.full(len(segment), viejo.sigma_for(parent.spec.beta)),
+        safety=safety,
+        rate_per_bar=rate_per_bar,
+        first_decision=first_decision,
+    )
+    return evaluate_states(
+        np.asarray(segment.series.close, dtype=np.float64),
+        estados,
+        initial_cash=initial_cash,
+        safety=safety,
+        rate_per_bar=rate_per_bar,
+        costs=segment.costs,
+        first_decision=first_decision,
+    )
+
+
+def _ceiling_summary(
+    ceilings: Ceilings, initial_cash: float, memorizer: FloatArray | None = None
+) -> dict[str, Any]:
     resumen = ceilings.describe()
     resumen["always_long_log_growth"] = float(
         np.log(ceilings.always_long[-1] / ceilings.always_long[0])
@@ -445,6 +509,9 @@ def _ceiling_summary(ceilings: Ceilings, initial_cash: float) -> dict[str, Any]:
         np.log(ceilings.informed[-1] / ceilings.informed[0])
     )
     resumen["initial_cash"] = initial_cash
+    if memorizer is not None:
+        resumen["memorizer_total_return"] = float(memorizer[-1] / memorizer[0] - 1.0)
+        resumen["memorizer_capture"] = ceilings.capture(memorizer)
     return resumen
 
 
@@ -651,11 +718,23 @@ def evaluate_level_3(arms: Sequence[ArmResult]) -> LevelResult:
     partes = []
     for arm in arms:
         capture = arm.median("capture")
-        exceso = arm.median("excess_log_growth_vs_always_long")
+        referencia = arm.ceiling.get("memorizer_capture")
+        veredicto = "sin referencia de memorizador"
+        if capture is not None and referencia is not None:
+            # El memorizador tiene capture muy negativo: aplicar la regla vieja
+            # al regimen nuevo destruye capital. Un agente que se le acerca esta
+            # memorizando; uno que se acerca a 1 se adapto.
+            veredicto = (
+                "MEMORIZA"
+                if capture < float(referencia) / 2.0
+                else "se adapta parcialmente"
+                if capture < 0.5
+                else "SE ADAPTA"
+            )
         partes.append(
-            f"{arm.label}: capture mediano "
-            f"{'n/a' if capture is None else f'{capture:.3f}'}, exceso log sobre "
-            f"estar siempre invertido {exceso:+.3f}"
+            f"{arm.label}: {veredicto} (capture "
+            f"{'n/a' if capture is None else f'{capture:+.3f}'}, memorizador "
+            f"{'n/a' if referencia is None else f'{float(referencia):+.3f}'})"
         )
     return LevelResult(
         3,
