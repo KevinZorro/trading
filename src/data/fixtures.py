@@ -84,6 +84,11 @@ _SQRT2 = math.sqrt(2.0)
 # techo y estar siempre invertido es indistinguible de cero.
 DISPERSION_NULA_REL = 1e-12
 
+# Margen para declarar que el techo quedo por debajo de estar siempre invertido.
+# La regla informada es optima en esperanza, no en cada camino realizado, asi que
+# una diferencia chica es ruido; una grande es un techo mal especificado.
+CEILING_TOL = 0.05
+
 
 class FixtureError(DataError):
     """El fixture no se puede construir o el techo no se puede calcular."""
@@ -168,13 +173,24 @@ class SignalSpec:
     def conditional_mean(self, signal: FloatArray, n: int | None = None) -> FloatArray:
         """``E[r_{t+1} | F_t] = mu + beta*r_t``, conocido en ``t``.
 
-        Usa el ``beta`` vigente en ``t``, que es el que gobierna la transicion
-        de ``t`` a ``t+1``.
+        Usa ``beta_{t+1}``, **no** ``beta_t``: el generador produce ``r_t`` con
+        el beta indexado en ``t`` (``r[t] = mu(b_t) + b_t*r[t-1]``), asi que el
+        que gobierna la transicion de ``t`` a ``t+1`` es el de ``t+1``. Dentro de
+        un regimen los dos coinciden y la diferencia no se nota; en la barra
+        anterior al cambio de regimen, usar ``beta_t`` aplica la regla del
+        regimen viejo a una transicion que ya pertenece al nuevo.
+
+        La ultima barra no tiene ``t+1``: su decision expira sin ejecutarse, asi
+        que se reusa el ultimo beta y el valor no afecta a ningun resultado.
         """
         total = len(signal) if n is None else n
         betas = self.betas(total)
+        siguientes = np.concatenate([betas[1:], betas[-1:]])
         return np.asarray(
-            [self.mu_for(b) + b * float(s) for b, s in zip(betas, signal, strict=True)],
+            [
+                self.mu_for(b) + b * float(s)
+                for b, s in zip(siguientes, signal, strict=True)
+            ],
             dtype=np.float64,
         )
 
@@ -889,6 +905,7 @@ class Ceilings:
     always_flat: FloatArray
     informed_states: StateArray
     clairvoyant_states: StateArray
+    informed_below_reference: bool
     expected_growth_per_bar: float | None
     rule: str
     memorizer: FloatArray | None = None
@@ -915,12 +932,22 @@ class Ceilings:
         SNR. El retorno crudo no sirve: al bajar el SNR el techo baja tambien, y
         una degradacion trivial del techo se leeria como degradacion del agente.
 
-        Devuelve ``None`` cuando el techo coincide con estar siempre invertido
-        -el nivel 4- porque ahi la fraccion no esta definida: el denominador es
-        cero. Un cero se leeria como "no capturo nada", que es distinto de "no
-        habia nada que capturar", y esa diferencia **es** el resultado del
-        control negativo. Mismo criterio que ``eval.trades`` con ``win_rate``.
+        Devuelve ``None`` en dos casos, y los dos importan:
+
+        1. **El techo coincide con estar siempre invertido** (el nivel 4): el
+           denominador es cero y la fraccion no esta definida. Un cero se leeria
+           como "no capturo nada", que es distinto de "no habia nada que
+           capturar", y esa diferencia **es** el resultado del control negativo.
+           Mismo criterio que ``eval.trades`` con ``win_rate``.
+        2. **El techo queda por debajo de estar siempre invertido**
+           (``informed_below_reference``): el denominador es negativo y el
+           cociente premia alejarse del techo. Estar siempre invertido es una
+           politica factible, asi que un optimo sistematicamente por debajo no es
+           un resultado, es un techo mal especificado. Devolver un numero ahi
+           seria reportar como desempeno lo que es un bug.
         """
+        if self.informed_below_reference:
+            return None
 
         def crecimiento(curva: FloatArray) -> float:
             return math.log(float(curva[-1]) / float(curva[0]))
@@ -943,6 +970,7 @@ class Ceilings:
             "expected_growth_per_bar": self.expected_growth_per_bar,
             "time_invested": self.time_invested,
             "turnover_count": self.turnover_count,
+            "informed_below_reference": self.informed_below_reference,
             "policy": self.policy.describe() if self.policy else None,
         }
 
@@ -1068,6 +1096,18 @@ class Fixture:
 
         unos = np.ones(len(self), dtype=np.int8)
         unos[:first_decision] = 0
+        curva_informado = evaluate_states(close, estados, **comun)  # type: ignore[arg-type]
+        curva_larga = evaluate_states(close, unos, **comun)  # type: ignore[arg-type]
+        # `always_long` es una politica factible: el optimo informado no puede
+        # quedar sistematicamente por debajo. Cuando pasa, el techo esta mal
+        # especificado -por ejemplo, aplicando el beta del regimen equivocado- y
+        # hay que decirlo en vez de dejar que `capture` produzca un cociente con
+        # denominador negativo. La tolerancia deja pasar el ruido de camino: la
+        # regla es optima en esperanza, no en cada realizacion.
+        debajo = bool(
+            math.log(float(curva_informado[-1]) / float(curva_informado[0]))
+            < math.log(float(curva_larga[-1]) / float(curva_larga[0])) - CEILING_TOL
+        )
         videntes = clairvoyant_states(
             close,
             safety=safety,
@@ -1076,9 +1116,9 @@ class Fixture:
             first_decision=first_decision,
         )
         return Ceilings(
-            informed=evaluate_states(close, estados, **comun),  # type: ignore[arg-type]
+            informed=curva_informado,
             clairvoyant=evaluate_states(close, videntes, **comun),  # type: ignore[arg-type]
-            always_long=evaluate_states(close, unos, **comun),  # type: ignore[arg-type]
+            always_long=curva_larga,
             always_flat=evaluate_states(
                 close,
                 np.zeros(len(self), dtype=np.int8),
@@ -1086,6 +1126,7 @@ class Fixture:
             ),
             informed_states=estados,
             clairvoyant_states=videntes,
+            informed_below_reference=debajo,
             expected_growth_per_bar=crecimiento,
             rule=regla,
             memorizer=memorizador,
@@ -1197,9 +1238,39 @@ class Fixture:
                     name=f"{self.name}:{sufijo}",
                     series=self.series.slice(a, b),
                     signal=self.signal[a:b],
+                    spec=self._spec_para_tramo(a, b),
                 )
             )
         return partes[0], partes[1], partes[2]
+
+    def _spec_para_tramo(self, start: int, stop: int) -> SignalSpec:
+        """Traslada el cambio de regimen a las coordenadas del tramo.
+
+        Sin esto, un tramo posterior al flip conserva ``flip_at`` del padre -un
+        indice que su propia serie ni siquiera alcanza- y ``betas()`` devuelve el
+        beta **anterior** al cambio para datos que ya son del regimen nuevo. La
+        regla optima queda exactamente invertida y el techo pasa a ser peor que
+        no operar.
+
+        Medido cuando aparecio: sobre el tramo de validacion del nivel 3, el
+        techo "optimo" perdia el 89% del capital mientras estar siempre invertido
+        perdia el 1.3%. Lo detecto correr el protocolo, no un test.
+        """
+        if self.spec.flip_at is None or self.spec.beta_after_flip is None:
+            return self.spec
+        corte = self.spec.flip_at - start
+        if corte <= 0:
+            # El tramo entero es posterior al cambio: ya no hay flip que aplicar.
+            return replace(
+                self.spec,
+                beta=self.spec.beta_after_flip,
+                beta_after_flip=None,
+                flip_at=None,
+            )
+        if corte >= stop - start:
+            # El tramo entero es anterior al cambio.
+            return replace(self.spec, beta_after_flip=None, flip_at=None)
+        return replace(self.spec, flip_at=corte)
 
     def describe(self) -> dict[str, Any]:
         """Todo lo necesario para reproducir el fixture, junto al resultado."""

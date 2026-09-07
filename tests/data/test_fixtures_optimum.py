@@ -551,3 +551,120 @@ def test_el_instrumento_del_fixture_no_impone_minimos() -> None:
 
 def _sin_uso(x: FloatArray) -> None:  # pragma: no cover
     return None
+
+
+# ---------------------------------------------------------------------------
+# El cambio de regimen y la particion
+#
+# Los tres tests de abajo fijan un bug que **no** encontro ningun test: lo
+# encontro correr el protocolo de la Parte B. `split()` no trasladaba el indice
+# del cambio de regimen a las coordenadas del tramo, asi que el tramo de
+# validacion -entero posterior al flip- conservaba `flip_at` del padre, un
+# indice que su propia serie ni alcanza. `betas()` devolvia el beta **anterior**
+# al cambio para datos que ya eran del regimen nuevo, y la regla optima quedaba
+# exactamente invertida: el techo perdia el 89% del capital mientras estar
+# siempre invertido perdia el 1.3%.
+# ---------------------------------------------------------------------------
+
+
+def test_split_traslada_el_cambio_de_regimen_al_tramo() -> None:
+    """Cada tramo tiene que saber que regimen le toca, en su propio indice."""
+    fixture = level_3_regime_flip(1_000, seed=SEED, flip_at=500)
+    train, validacion, test = fixture.split(train=0.4, validation=0.3, test=0.3)
+
+    # El train (0..400) es entero anterior al cambio: no hay flip que aplicar.
+    assert train.spec.flip_at is None
+    assert train.spec.beta_after_flip is None
+    assert train.spec.beta == fixture.spec.beta
+
+    # Validacion (400..700) contiene el corte, que cae en su indice 100.
+    assert validacion.spec.flip_at == 100
+    assert validacion.spec.beta == fixture.spec.beta
+
+    # Test (700..1000) es entero posterior: el beta pasa a ser el de despues.
+    assert test.spec.flip_at is None
+    assert test.spec.beta == fixture.spec.beta_after_flip
+
+
+def test_el_beta_del_tramo_es_el_que_los_datos_tienen() -> None:
+    """La comprobacion empirica: el beta declarado coincide con el medido."""
+    fixture = level_3_regime_flip(8_000, seed=SEED)
+    _, validacion, _ = fixture.split()
+    r = np.asarray(validacion.signal)[1:]
+    x, y = r[:-1], r[1:]
+    medido = float(
+        ((x - x.mean()) * (y - y.mean())).mean() / ((x - x.mean()) ** 2).mean()
+    )
+    assert validacion.spec.beta > 0
+    assert abs(medido - validacion.spec.beta) < 4.0 * math.sqrt(
+        (1 - validacion.spec.beta**2) / len(r)
+    )
+
+
+def test_el_techo_de_un_tramo_posterior_al_flip_le_gana_a_estar_invertido() -> None:
+    """La consecuencia observable del bug, fijada como test.
+
+    Con el beta equivocado el "optimo" era peor que no hacer nada. Estar siempre
+    invertido es una politica factible: el optimo informado tiene que ganarle.
+    """
+    fixture = level_3_regime_flip(8_000, seed=SEED)
+    _, validacion, _ = fixture.split()
+    techos = validacion.ceilings(safety=0.98, first_decision=26, initial_cash=CAPITAL)
+    assert techos.informed_below_reference is False
+    assert float(techos.informed[-1]) > float(techos.always_long[-1])
+
+
+def test_un_techo_por_debajo_de_la_referencia_queda_marcado() -> None:
+    """Aplicar a proposito la regla del regimen equivocado enciende la bandera.
+
+    Es la contraprueba: sin esto, el test anterior podria estar en verde porque
+    la bandera nunca se enciende con nada.
+    """
+    from dataclasses import replace as reemplazar
+
+    fixture = level_3_regime_flip(8_000, seed=SEED)
+    _, validacion, _ = fixture.split()
+    invertido = reemplazar(validacion, spec=reemplazar(validacion.spec, beta=-0.3))
+    techos = invertido.ceilings(safety=0.98, first_decision=26, initial_cash=CAPITAL)
+    assert techos.informed_below_reference is True
+    assert techos.capture(techos.informed) is None
+
+
+def test_capture_no_devuelve_un_cociente_con_denominador_negativo() -> None:
+    """Premiar el alejarse del techo seria reportar un bug como desempeno."""
+    from dataclasses import replace as reemplazar
+
+    fixture = level_3_regime_flip(4_000, seed=SEED)
+    _, validacion, _ = fixture.split()
+    roto = reemplazar(validacion, spec=reemplazar(validacion.spec, beta=-0.3))
+    techos = roto.ceilings(safety=0.98, first_decision=26, initial_cash=CAPITAL)
+    assert techos.capture(techos.always_long) is None
+    assert techos.describe()["informed_below_reference"] is True
+
+
+def test_el_edge_usa_el_beta_de_la_transicion_y_no_el_de_la_barra() -> None:
+    """Oraculo a mano en la barra del cambio de regimen.
+
+    El generador produce ``r[t]`` con el beta indexado en ``t``, asi que el que
+    gobierna la transicion de ``t`` a ``t+1`` es el de ``t+1``. Dentro de un
+    regimen coinciden; en la barra anterior al cambio, usar el de ``t`` aplica la
+    regla del regimen viejo a una transicion que ya pertenece al nuevo.
+    """
+    spec = SignalSpec(
+        drift=0.0,
+        beta=-0.5,
+        sigma_target=0.01,
+        beta_after_flip=0.5,
+        flip_at=3,
+    )
+    senal = np.array([0.02] * 5)
+    esperado = np.array(
+        [
+            -0.5 * 0.02,  # t=0 -> t=1, ambos en el regimen viejo
+            -0.5 * 0.02,  # t=1 -> t=2
+            +0.5 * 0.02,  # t=2 -> t=3: la transicion YA es del regimen nuevo
+            +0.5 * 0.02,  # t=3 -> t=4
+            +0.5 * 0.02,  # t=4: no hay t+1, la orden expira
+        ]
+    )
+    np.testing.assert_allclose(spec.conditional_mean(senal), esperado, atol=1e-15)

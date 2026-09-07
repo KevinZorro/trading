@@ -164,13 +164,44 @@ def test_el_techo_informado_de_un_prefijo_es_el_prefijo_del_techo(
     techo calculado sobre la serie entera. Vale tambien para el nivel 2, donde
     la politica sale de un programa dinamico: la solucion es estacionaria
     -depende del estado, no del instante-, asi que tampoco mira hacia adelante.
+
+    **La ultima barra queda fuera de la comparacion, y el motivo es el propio
+    anti-leakage.** La regla informada conoce el proceso, incluido cuando cambia
+    de regimen, asi que en su ultima barra el techo de la serie entera usa el
+    beta que gobierna la transicion hacia la barra **siguiente** -que existe para
+    el padre y no para el hijo-. El hijo no puede saber que regimen viene
+    despues del final de sus datos, y que difieran ahi es exactamente lo que
+    tiene que pasar: si coincidieran, el techo del tramo estaria usando
+    informacion de fuera de su ventana. La decision de esa barra ademas expira
+    sin ejecutarse.
     """
     train, _, _ = fixture.split(train=0.5, validation=0.25, test=0.25)  # type: ignore[attr-defined]
     n = len(train)
     entero = fixture.ceilings()  # type: ignore[attr-defined]
     prefijo = train.ceilings()
-    np.testing.assert_array_equal(prefijo.informed_states, entero.informed_states[:n])
-    np.testing.assert_allclose(prefijo.informed, entero.informed[:n], rtol=1e-12)
+    np.testing.assert_array_equal(
+        prefijo.informed_states[: n - 1], entero.informed_states[: n - 1]
+    )
+    np.testing.assert_allclose(
+        prefijo.informed[: n - 1], entero.informed[: n - 1], rtol=1e-12
+    )
+
+
+def test_el_techo_de_un_tramo_no_sabe_que_regimen_viene_despues() -> None:
+    """La contraparte del test anterior: en la frontera **tienen** que diferir.
+
+    El padre sabe que en la barra siguiente cambia el regimen; el hijo no puede
+    saberlo, porque esa barra esta fuera de su serie. Sin este test, recortar la
+    comparacion en ``n-1`` pareceria una tolerancia de conveniencia en vez de la
+    consecuencia de la garantia.
+    """
+    fixture = level_3_regime_flip(LARGO, seed=SEED, flip_at=LARGO // 2)
+    train, _, _ = fixture.split(train=0.5, validation=0.25, test=0.25)
+    n = len(train)
+    assert n == fixture.spec.flip_at  # el corte cae justo en el borde del tramo
+    entero = fixture.ceilings()
+    prefijo = train.ceilings()
+    assert prefijo.informed_states[n - 1] != entero.informed_states[n - 1]
 
 
 def test_el_clarividente_con_costos_si_mira_hacia_adelante() -> None:

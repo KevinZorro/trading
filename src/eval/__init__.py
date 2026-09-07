@@ -11,6 +11,16 @@ Dos reglas del modulo que no son negociables:
    por regimen que se midio en la Etapa 1.
 """
 
+from eval.distribution import (
+    MIN_SEEDS,
+    DeflatedSharpe,
+    DistributionError,
+    SeedDistribution,
+    deflated_sharpe,
+    expected_max_sharpe,
+    probabilistic_sharpe_ratio,
+    summarize,
+)
 from eval.metrics import (
     DISPERSION_NULA_REL,
     Drawdown,
@@ -48,11 +58,15 @@ from eval.trades import (
     round_trips,
     trade_stats,
 )
+from eval.walkforward import WalkForwardError, Window, coverage, rolling_windows
 
 __all__ = [
     "DISPERSION_NULA_REL",
+    "MIN_SEEDS",
     "POSITION_TOL",
     "CostReport",
+    "DeflatedSharpe",
+    "DistributionError",
     "Drawdown",
     "EquityMetrics",
     "FrictionGap",
@@ -61,22 +75,31 @@ __all__ = [
     "RoundTrip",
     "RoundTripLog",
     "RunReport",
+    "SeedDistribution",
     "TradeStats",
     "TurnoverStats",
+    "WalkForwardError",
+    "Window",
     "annual_volatility",
     "cagr",
     "calmar",
+    "coverage",
+    "deflated_sharpe",
     "evaluate_run",
     "evaluate_series",
     "excess_returns",
+    "expected_max_sharpe",
     "first_ruin_index",
     "friction_gap",
     "max_drawdown",
     "periodic_rate",
+    "probabilistic_sharpe_ratio",
+    "rolling_windows",
     "round_trips",
     "sharpe",
     "simple_returns",
     "sortino",
+    "summarize",
     "total_return",
     "trade_stats",
     "truncate_at_ruin",

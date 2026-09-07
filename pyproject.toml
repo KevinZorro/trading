@@ -11,6 +11,14 @@ dependencies = [
 ]
 
 [dependency-groups]
+# Grupo opcional: **no** se instala con `uv sync --frozen`. torch pesa GB y solo
+# hace falta para entrenar; el nucleo de `agents/` -el protocolo de validacion,
+# el reporte por semillas, el walk-forward- no lo necesita y se testea sin el.
+# Ver docs/adr/0003.
+rl = [
+    "stable-baselines3==2.7.0",
+    "sb3-contrib==2.7.0",
+]
 dev = [
     "pytest==8.3.4",
     "pytest-cov==6.0.0",
@@ -35,6 +43,9 @@ markers = [
     # Tests caros (barridos de regimenes, series largas). Van a un job aparte
     # para que el job principal se mantenga por debajo de los 5 minutos.
     "slow: tarda lo suficiente como para no correr en el job principal",
+    # Necesita el grupo `rl` (torch + stable-baselines3), que no se instala por
+    # defecto. Se saltea solo si el grupo no esta; ver docs/adr/0003.
+    "rl: necesita stable-baselines3 y torch (uv sync --group rl)",
 ]
 
 # ---------------------------------------------------------------------------
@@ -101,6 +112,12 @@ mypy_path = "src"
 strict = true
 warn_unreachable = true
 show_error_codes = true
+
+[[tool.mypy.overrides]]
+# El grupo `rl` es opcional y el CI no lo instala en el job de tipos: sin este
+# override, mypy fallaria por no encontrar el modulo en vez de por un error real.
+module = ["stable_baselines3.*", "sb3_contrib.*"]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # pandas no publica stubs en el paquete. pandas-stubs existe pero va a su
