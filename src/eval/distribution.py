@@ -18,6 +18,7 @@ una vez de cada dos.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import NormalDist
 
@@ -320,4 +321,211 @@ def deflated_sharpe(
         skew=asimetria,
         kurtosis=curtosis,
         significant=valor > 1.0 - alpha,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Varianza de mercado contra varianza de entrenamiento
+#
+# El hallazgo que obligo a escribir esto: sobre un fixture sintetico, diez
+# semillas de entrenamiento sobre **un** camino no miden lo que uno cree que
+# miden. Miden cuanto varia el resultado al reentrenar sobre la misma serie, que
+# es una pregunta distinta de cuanto varia al cambiar de mercado.
+#
+# Medido en el nivel 4 del protocolo: el exceso del agente sobre estar invertido
+# fue +0.164 con las diez semillas de acuerdo entre si, sobre un camino donde
+# estar invertido rindio -0.013. El desvio de ese mismo baseline **entre 20
+# caminos de Heston independientes** es 0.781. El "hallazgo" era cinco veces mas
+# chico que la dispersion del sorteo, y ninguna cantidad de semillas de
+# entrenamiento lo habria revelado: hay que muestrear caminos.
+#
+# En datos reales los caminos no se pueden muestrear -la historia es uno solo- y
+# esa asimetria es la razon de fondo por la que el walk-forward fuera de muestra
+# es la unica defensa que queda. No es un detalle metodologico: es la diferencia
+# entre poder medir el error y solo poder acotarlo.
+# ---------------------------------------------------------------------------
+
+# Valores criticos de t de dos colas al 95%, por grados de libertad. Tabla y no
+# una aproximacion normal porque con N=10 caminos la diferencia entre 2.262 y
+# 1.96 decide si un exceso se declara significativo o no.
+_T_CRITICO_95: dict[int, float] = {
+    1: 12.706,
+    2: 4.303,
+    3: 3.182,
+    4: 2.776,
+    5: 2.571,
+    6: 2.447,
+    7: 2.365,
+    8: 2.306,
+    9: 2.262,
+    10: 2.228,
+    11: 2.201,
+    12: 2.179,
+    13: 2.160,
+    14: 2.145,
+    15: 2.131,
+    16: 2.120,
+    17: 2.110,
+    18: 2.101,
+    19: 2.093,
+    20: 2.086,
+    21: 2.080,
+    22: 2.074,
+    23: 2.069,
+    24: 2.064,
+    25: 2.060,
+    26: 2.056,
+    27: 2.052,
+    28: 2.048,
+    29: 2.045,
+    30: 2.042,
+}
+_T_CRITICO_INFINITO = 1.960
+
+
+def t_critical_95(df: int) -> float:
+    """Valor critico de t de dos colas al 95% con ``df`` grados de libertad."""
+    if df < 1:
+        raise DistributionError("hacen falta al menos 2 observaciones (df >= 1)")
+    return _T_CRITICO_95.get(df, _T_CRITICO_INFINITO)
+
+
+def drift_t_statistic(log_returns: FloatArray) -> float:
+    """``t`` del drift medio: ``media / (desvio / sqrt(n))``.
+
+    Es la pregunta "¿este drift es detectable en esta muestra?", que hay que
+    contestar **antes** de exigirle a un agente que lo aprenda. Sobre el nivel 4
+    del protocolo da ~1.8 con 4800 barras de entrenamiento: por debajo de
+    cualquier umbral de significancia, asi que "el agente debe converger a estar
+    invertido" le pide aprender algo que la muestra no contiene.
+
+    Se reporta junto al resultado justamente para que el criterio no se pueda
+    leer sin ese contexto.
+    """
+    serie = np.asarray(log_returns, dtype=np.float64)
+    if serie.size < 2:
+        raise DistributionError("hacen falta al menos 2 retornos")
+    desvio = float(serie.std(ddof=1))
+    if desvio <= 0.0:
+        raise DistributionError("dispersion nula: el estadistico no esta definido")
+    return float(serie.mean()) / (desvio / math.sqrt(serie.size))
+
+
+@dataclass(frozen=True)
+class VarianceDecomposition:
+    """Una metrica sobre ``N`` caminos x ``M`` semillas, con las dos varianzas.
+
+    - ``between_path_std``: desvio de las medianas por camino. Es la **varianza
+      de mercado**: cuanto cambia el resultado por haber tocado otro camino.
+    - ``within_path_std``: mediana de los desvios entre semillas dentro de cada
+      camino. Es la **varianza de entrenamiento**: cuanto cambia el resultado
+      por reentrenar sobre la misma serie.
+
+    ``t_statistic`` contrasta la media entre caminos contra cero usando el error
+    estandar **entre caminos**, que es el unico denominador honesto: usar el de
+    las semillas trataria M x N observaciones como independientes cuando en
+    realidad hay N.
+    """
+
+    metric: str
+    n_paths: int
+    n_seeds_per_path: int
+    path_medians: tuple[float, ...]
+    mean: float
+    between_path_std: float
+    within_path_std: float | None
+    standard_error: float
+    t_statistic: float | None
+    t_critical: float
+    distinguishable_from_zero: bool
+
+    @property
+    def variance_ratio(self) -> float | None:
+        """Cuantas veces la varianza de mercado supera a la de entrenamiento.
+
+        Un cociente grande dice que reportar solo semillas -que es lo que hacia
+        el protocolo antes de este cambio- describe la fuente de variacion
+        equivocada.
+        """
+        if self.within_path_std is None or self.within_path_std <= 0.0:
+            return None
+        return self.between_path_std / self.within_path_std
+
+    def describe(self) -> dict[str, object]:
+        salida = dict(vars(self))
+        salida["path_medians"] = list(self.path_medians)
+        salida["variance_ratio"] = self.variance_ratio
+        return salida
+
+    def render(self) -> str:
+        t = "n/a" if self.t_statistic is None else f"{self.t_statistic:+.2f}"
+        dentro = self.within_path_std
+        entrenamiento = "n/a" if dentro is None else f"{dentro:.4f}"
+        razon = self.variance_ratio
+        veredicto = (
+            "DISTINGUIBLE de cero"
+            if self.distinguishable_from_zero
+            else "NO distinguible de cero"
+        )
+        return (
+            f"{self.metric}: media entre caminos {self.mean:+.4f}  "
+            f"sigma_mercado {self.between_path_std:.4f}  "
+            f"sigma_entrenamiento {entrenamiento}"
+            + (f" (x{razon:.1f})" if razon is not None else "")
+            + f"  t={t} contra {self.t_critical:.3f}  {veredicto}"
+            + f"  (N={self.n_paths} caminos x M={self.n_seeds_per_path} semillas)"
+        )
+
+
+def decompose_variance(
+    metric: str,
+    per_path: Sequence[Sequence[float | None]],
+    *,
+    min_paths: int = 2,
+) -> VarianceDecomposition:
+    """Descompone una metrica medida sobre varios caminos y varias semillas.
+
+    ``per_path[i]`` son los valores de las ``M`` semillas sobre el camino ``i``.
+    Cada camino aporta **una** observacion -su mediana- porque las semillas de un
+    mismo camino no son independientes entre si: comparten la serie.
+    """
+    if len(per_path) < min_paths:
+        raise DistributionError(
+            f"hacen falta al menos {min_paths} caminos para separar la varianza "
+            f"de mercado de la de entrenamiento; se pasaron {len(per_path)}. Con "
+            "un solo camino las dos son indistinguibles, que es exactamente el "
+            "problema que esta descomposicion existe para evitar."
+        )
+    medianas: list[float] = []
+    desvios: list[float] = []
+    for valores in per_path:
+        validos = np.asarray([v for v in valores if v is not None], dtype=np.float64)
+        if validos.size == 0:
+            raise DistributionError(
+                f"un camino no tiene ni un valor valido de {metric!r}"
+            )
+        medianas.append(float(np.median(validos)))
+        if validos.size >= 2:
+            desvios.append(float(validos.std(ddof=1)))
+
+    arreglo = np.asarray(medianas, dtype=np.float64)
+    n = arreglo.size
+    entre = float(arreglo.std(ddof=1))
+    dentro = float(np.median(desvios)) if desvios else None
+    error = entre / math.sqrt(n)
+    media = float(arreglo.mean())
+    critico = t_critical_95(n - 1)
+    t = media / error if error > 0 else None
+    return VarianceDecomposition(
+        metric=metric,
+        n_paths=n,
+        n_seeds_per_path=len(per_path[0]),
+        path_medians=tuple(medianas),
+        mean=media,
+        between_path_std=entre,
+        within_path_std=dentro,
+        standard_error=error,
+        t_statistic=t,
+        t_critical=critico,
+        distinguishable_from_zero=bool(t is not None and abs(t) > critico),
     )

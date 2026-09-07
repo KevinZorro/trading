@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from agents.cli import FIXTURE_SEED, STUDY_SEEDS, build_fixture, main
-from tests.agents.test_protocol import brazo
+from tests.agents.test_protocol import brazo, multicamino
 
 SEED = FIXTURE_SEED
 
@@ -36,14 +36,14 @@ def poblar(directorio: Path, *, capture_nivel_0: float = 0.95) -> None:
     escribir(directorio, brazo("level_2_beta-0.3", turnover_annualized=10.0))
     escribir(directorio, brazo("level_3_beta-0.3"))
     escribir(directorio, brazo("level_3_beta-0.3_lstm"))
-    escribir(
-        directorio,
-        brazo(
-            "level_4",
-            time_invested=0.95,
-            excess_log_growth_vs_always_long=0.0,
-            turnover_annualized=0.08,
-        ),
+    # El nivel 4 va aparte: necesita N caminos, no N semillas sobre uno.
+    ruta = directorio / "multipath_level_4.json"
+    ruta.write_text(
+        json.dumps(
+            multicamino(
+                excesos=[0.4, -0.3, 0.2, -0.5, 0.1, -0.2, 0.3, -0.1, 0.0, 0.15]
+            ).describe()
+        )
     )
 
 

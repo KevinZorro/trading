@@ -18,12 +18,14 @@ from agents.policy import (
 from agents.protocol import (
     ArmResult,
     LevelResult,
+    MultiPathResult,
     ProtocolReport,
     ProtocolThresholds,
     SeedRun,
     Verdict,
     assemble_protocol,
     run_arm,
+    run_multipath_arm,
 )
 from agents.runner import (
     EpisodeOutcome,
@@ -43,6 +45,7 @@ __all__ = [
     "ExperimentRecord",
     "LevelResult",
     "MovingAverageCross",
+    "MultiPathResult",
     "Policy",
     "ProtocolReport",
     "ProtocolThresholds",
@@ -56,6 +59,7 @@ __all__ = [
     "jsonable",
     "run_arm",
     "run_baselines",
+    "run_multipath_arm",
     "run_policy",
     "run_strategy",
     "scaler_for",

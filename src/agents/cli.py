@@ -24,9 +24,11 @@ from agents.experiment import ExperimentLog, jsonable
 from agents.ppo import PPOConfig
 from agents.protocol import (
     ArmResult,
+    MultiPathResult,
     ProtocolThresholds,
     assemble_protocol,
     run_arm,
+    run_multipath_arm,
 )
 from data.fixtures import (
     DEFAULT_N_BARS,
@@ -50,18 +52,48 @@ STUDY_SEEDS: tuple[int, ...] = (11, 23, 37, 41, 59, 67, 73, 89, 97, 101)
 FIXTURE_SEED = 20240115
 
 
-def build_fixture(level: str, *, beta: float | None, n_bars: int) -> Fixture:
+def build_fixture_with_seed(
+    level: str, *, beta: float | None, n_bars: int, seed: int
+) -> Fixture:
+    """El fixture de un nivel con la semilla del **proceso** explicita.
+
+    Separar esta semilla de las del agente es lo que permite muestrear caminos:
+    cambiarla da otra realizacion del mismo mercado, no otro mercado.
+    """
     if level == "level_0":
+        # Determinista por construccion: no admite semilla, y por eso su
+        # varianza de mercado es exactamente cero. N=1 ahi es completo.
         return level_0_deterministic(min(n_bars, 4_000))
     if level == "level_1":
-        return level_1_noisy(n_bars, seed=FIXTURE_SEED, beta=beta or -0.3)
+        return level_1_noisy(n_bars, seed=seed, beta=beta or -0.3)
     if level == "level_2":
-        return level_2_costly(n_bars, seed=FIXTURE_SEED, beta=beta or -0.3)
+        return level_2_costly(n_bars, seed=seed, beta=beta or -0.3)
     if level == "level_3":
-        return level_3_regime_flip(n_bars, seed=FIXTURE_SEED, beta=beta or -0.3)
+        return level_3_regime_flip(n_bars, seed=seed, beta=beta or -0.3)
     if level == "level_4":
-        return level_4_control(n_bars, seed=FIXTURE_SEED)
+        return level_4_control(n_bars, seed=seed)
     raise SystemExit(f"nivel desconocido: {level}")
+
+
+def build_fixture(level: str, *, beta: float | None, n_bars: int) -> Fixture:
+    return build_fixture_with_seed(level, beta=beta, n_bars=n_bars, seed=FIXTURE_SEED)
+
+
+#: Semillas de los caminos del nivel 4. Separadas de las del agente: estas
+#: muestrean el **mercado** y aquellas el entrenamiento, y son las dos varianzas
+#: que el reporte tiene que separar.
+PATH_SEEDS: tuple[int, ...] = (
+    701,
+    709,
+    719,
+    727,
+    733,
+    739,
+    743,
+    751,
+    757,
+    761,
+)
 
 
 def cmd_arm(args: argparse.Namespace) -> int:
@@ -95,6 +127,44 @@ def cmd_arm(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_multipath(args: argparse.Namespace) -> int:
+    """Un nivel sobre N caminos independientes x M semillas.
+
+    Es la unica forma de separar la varianza de mercado de la de entrenamiento
+    sobre un fixture sintetico. En datos reales no hay equivalente: N=1 por
+    construccion.
+    """
+    config = PPOConfig(total_timesteps=args.timesteps, recurrent=args.recurrent)
+    etiqueta = args.label or args.level
+    caminos = list(PATH_SEEDS[: args.paths])
+    resultado = run_multipath_arm(
+        lambda semilla: build_fixture_with_seed(
+            args.level, beta=args.beta, n_bars=args.bars, seed=semilla
+        ),
+        label=etiqueta,
+        path_seeds=caminos,
+        agent_seeds=list(STUDY_SEEDS[: args.seeds]),
+        ppo_config=config,
+        allow_fewer_seeds=args.seeds < 10,
+    )
+    destino = Path(args.out)
+    destino.mkdir(parents=True, exist_ok=True)
+    ruta = destino / f"multipath_{etiqueta}.json"
+    ruta.write_text(json.dumps(jsonable(resultado.describe()), indent=2))
+    print(f"escrito {ruta}")
+    for descomposicion in resultado.decompositions.values():
+        print("  " + descomposicion.render())
+    return 0
+
+
+def _load_multipath(directory: Path) -> dict[str, MultiPathResult]:
+    salida: dict[str, MultiPathResult] = {}
+    for ruta in sorted(directory.glob("multipath_*.json")):
+        resultado = MultiPathResult.from_dict(json.loads(ruta.read_text()))
+        salida[resultado.label] = resultado
+    return salida
+
+
 def _load_arms(directory: Path) -> dict[str, ArmResult]:
     brazos: dict[str, ArmResult] = {}
     for ruta in sorted(directory.glob("arm_*.json")):
@@ -121,7 +191,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     nivel_2 = brazos.get("level_2_beta-0.3") or brazos.get("level_2")
     referencia = brazos.get("level_1_beta-0.3")
     nivel_3 = buscar("level_3")
-    nivel_4 = brazos.get("level_4")
+    multicamino = _load_multipath(carpeta)
+    nivel_4 = multicamino.get("level_4")
 
     reporte = assemble_protocol(
         ProtocolThresholds(),
@@ -139,6 +210,7 @@ def cmd_assemble(args: argparse.Namespace) -> int:
             "fixture_seed": FIXTURE_SEED,
             "bars": DEFAULT_N_BARS,
             "snr_sweep": list(SNR_SWEEP_BETAS),
+            "path_seeds": list(PATH_SEEDS),
             "thresholds": ProtocolThresholds().describe(),
         },
         provenance=json.loads(args.provenance) if args.provenance else {},
@@ -164,6 +236,20 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--label", default=None)
     a.add_argument("--out", default="results")
     a.set_defaults(func=cmd_arm)
+
+    m = sub.add_parser(
+        "multipath", help="un nivel sobre N caminos independientes x M semillas"
+    )
+    m.add_argument("--level", required=True)
+    m.add_argument("--beta", type=float, default=None)
+    m.add_argument("--paths", type=int, default=10)
+    m.add_argument("--seeds", type=int, default=10)
+    m.add_argument("--timesteps", type=int, default=60_000)
+    m.add_argument("--bars", type=int, default=DEFAULT_N_BARS)
+    m.add_argument("--recurrent", action="store_true")
+    m.add_argument("--label", default=None)
+    m.add_argument("--out", default="results")
+    m.set_defaults(func=cmd_multipath)
 
     b = sub.add_parser("assemble", help="aplica los criterios sobre los brazos")
     b.add_argument("--out", default="results")

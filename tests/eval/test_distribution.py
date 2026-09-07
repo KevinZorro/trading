@@ -16,10 +16,13 @@ import pytest
 from eval.distribution import (
     MIN_SEEDS,
     DistributionError,
+    decompose_variance,
     deflated_sharpe,
+    drift_t_statistic,
     expected_max_sharpe,
     probabilistic_sharpe_ratio,
     summarize,
+    t_critical_95,
 )
 
 SEMILLAS = list(range(10))
@@ -188,3 +191,102 @@ def test_el_dsr_rechaza_una_serie_sin_dispersion() -> None:
 def test_el_dsr_rechaza_series_demasiado_cortas() -> None:
     with pytest.raises(DistributionError, match="al menos 2 retornos"):
         deflated_sharpe(np.array([0.01]), n_trials=1, sharpe_variance=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Varianza de mercado contra varianza de entrenamiento
+# ---------------------------------------------------------------------------
+
+
+def test_separa_la_varianza_de_mercado_de_la_de_entrenamiento() -> None:
+    """Caminos muy distintos entre si, semillas muy parecidas dentro de cada uno.
+
+    Es la forma que tenia el hallazgo del nivel 4: diez semillas de acuerdo entre
+    si sobre un camino, y una dispersion enorme al cambiar de camino.
+    """
+    rng = np.random.default_rng(11)
+    medias = [-1.0, -0.6, -0.2, 0.1, 0.3, 0.5, 0.8, 1.1, 1.4, 1.8]
+    por_camino = [list(m + 0.01 * rng.standard_normal(10)) for m in medias]
+    d = decompose_variance("exceso", por_camino)
+    assert d.n_paths == 10
+    assert d.n_seeds_per_path == 10
+    assert d.between_path_std > 0.8
+    assert d.within_path_std is not None
+    assert d.within_path_std < 0.05
+    ratio = d.variance_ratio
+    assert ratio is not None
+    assert ratio > 20
+
+
+def test_un_exceso_chico_frente_a_la_dispersion_entre_caminos_no_se_distingue() -> None:
+    """La regresion del nivel 4, en su forma minima.
+
+    Media +0.164 con desvio entre caminos ~0.8 y N=10: el error estandar es ~0.25
+    y el estadistico no llega ni a 1. El criterio viejo, que comparaba +0.164
+    contra un umbral fijo de 0.05, lo declaraba significativo.
+    """
+    excesos = [
+        0.164 + d for d in (0.9, -1.1, 0.4, -0.7, 1.2, -0.5, 0.2, -0.9, 0.6, -0.1)
+    ]
+    d = decompose_variance("exceso", [[e] * 10 for e in excesos])
+    assert d.mean == pytest.approx(0.164, abs=0.01)
+    assert abs(d.t_statistic or 0.0) < d.t_critical
+    assert d.distinguishable_from_zero is False
+    assert "NO distinguible de cero" in d.render()
+
+
+def test_un_exceso_consistente_entre_caminos_si_se_distingue() -> None:
+    """Contraprueba: sin esto, el test anterior podria pasar por vacuidad."""
+    d = decompose_variance("exceso", [[0.30 + 0.01 * i] * 10 for i in range(10)])
+    assert d.distinguishable_from_zero is True
+    assert "DISTINGUIBLE de cero" in d.render()
+
+
+def test_el_valor_critico_usa_la_t_y_no_la_normal() -> None:
+    """Con N=10 la diferencia entre 2.262 y 1.960 decide un veredicto."""
+    assert t_critical_95(9) == pytest.approx(2.262)
+    assert t_critical_95(1) == pytest.approx(12.706)
+    assert t_critical_95(500) == pytest.approx(1.960)
+    with pytest.raises(DistributionError, match="al menos 2 observaciones"):
+        t_critical_95(0)
+
+
+def test_un_solo_camino_no_permite_separar_nada() -> None:
+    """Es exactamente el error que esta descomposicion existe para impedir."""
+    with pytest.raises(DistributionError, match="al menos 2 caminos"):
+        decompose_variance("exceso", [[0.1] * 10])
+
+
+def test_un_camino_sin_valores_validos_falla() -> None:
+    with pytest.raises(DistributionError, match="ni un valor valido"):
+        decompose_variance("x", [[0.1, 0.2], [None, None]])
+
+
+def test_el_t_del_drift_detecta_un_drift_grande_y_no_uno_chico() -> None:
+    """El numero que dice si "converger a estar invertido" era alcanzable.
+
+    Oraculo: con media/desvio conocidos, ``t = media/(desvio/sqrt(n))``.
+    """
+    rng = np.random.default_rng(5)
+    ruido = rng.standard_normal(4_800)
+    ruido = (ruido - ruido.mean()) / ruido.std(ddof=1)
+
+    # Drift del regimen medium: mu=8% anual sobre 252 barras, sigma 30% anual.
+    debil = 0.08 / 252 + ruido * 0.30 / math.sqrt(252)
+    assert abs(drift_t_statistic(debil)) < 2.0
+
+    fuerte = 0.60 / 252 + ruido * 0.10 / math.sqrt(252)
+    assert abs(drift_t_statistic(fuerte)) > 4.0
+
+
+def test_el_t_del_drift_coincide_con_la_formula_a_mano() -> None:
+    serie = np.array([0.01, -0.005, 0.02, 0.0, 0.015])
+    esperado = float(serie.mean()) / (float(serie.std(ddof=1)) / math.sqrt(5))
+    assert drift_t_statistic(serie) == pytest.approx(esperado, rel=1e-12)
+
+
+def test_el_t_del_drift_rechaza_series_degeneradas() -> None:
+    with pytest.raises(DistributionError, match="al menos 2 retornos"):
+        drift_t_statistic(np.array([0.01]))
+    with pytest.raises(DistributionError, match="dispersion nula"):
+        drift_t_statistic(np.full(50, 0.01))
