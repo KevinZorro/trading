@@ -79,9 +79,19 @@ enunciado sobre el comportamiento del agente y no sobre significancia.
 ## Decisión 4 — El `t` del drift va al lado del veredicto
 
 Sobre Heston `medium` (μ=8% anual, 30% de volatilidad) el `t` del drift medio
-sobre las 4800 barras de entrenamiento es **≈1.8**: por debajo de cualquier
-umbral de significancia. Pedirle al agente que "converja a estar invertido" le
-pide aprender algo que la muestra no contiene.
+sobre las 4800 barras de entrenamiento, **medido sobre los 10 caminos**, tiene
+mediana **0.84** y rango −0.91 a +2.21: solo uno de los diez supera 1.96. El
+drift no es detectable en la muestra. Pedirle al agente que "converja a estar
+invertido" le pide aprender algo que la muestra no contiene.
+
+**Corrección a una cifra publicada.** El PR anterior (y el ADR 0003) daban ≈1.8
+para ese estadístico. Era una estimación mía, no una medición, y estaba mal por
+dos motivos: usaba el drift **aritmético** `μ·dt` cuando el generador produce
+log-retornos con drift `(μ − v/2)·dt`, y estaba redondeada hacia arriba. Con la
+fórmula correcta el valor poblacional es ≈0.51, y la mediana muestral sobre 10
+caminos da 0.84. La conclusión cualitativa no cambia —el drift sigue sin ser
+detectable— pero el número que se publicó era el equivocado y ahora está medido
+en vez de estimado.
 
 `drift_t_statistic` lo calcula y `evaluate_level_4` lo pone **en el hallazgo**,
 no en una nota al pie. Sin ese número al lado, un fallo del nivel se lee como un

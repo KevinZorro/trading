@@ -389,7 +389,8 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   exige diez.
 - **El `t` del drift sobre la ventana de entrenamiento va al lado del veredicto del
   nivel 4**, no en una nota al pie. Si el drift no es detectable en la muestra —en el
-  régimen `medium`, con μ=8% y 30% de volatilidad sobre 4800 barras, da ≈1.8— entonces
+  régimen `medium`, con μ=8% y 30% de volatilidad sobre 4800 barras, la mediana medida
+  sobre 10 caminos es 0.84, con rango −0.91 a +2.21— entonces
   "converger a estar invertido" le pide al agente aprender algo que la muestra no
   contiene, y un fallo del nivel no es un fallo del agente. `drift_t_statistic` lo
   calcula y `MultiPathResult.drift_detectable` lo contrasta.
