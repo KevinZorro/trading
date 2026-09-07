@@ -118,3 +118,32 @@ def test_la_politica_recurrente_reinicia_su_estado() -> None:
 
 def test_el_error_de_import_explica_como_arreglarlo() -> None:
     assert issubclass(PPOUnavailableError, ImportError)
+
+
+def test_el_brazo_multicamino_corre_de_punta_a_punta() -> None:
+    """Humo de ``run_multipath_arm``: dos caminos, dos semillas, entrenamiento minimo.
+
+    No mide aprendizaje -para eso esta el protocolo-, mide que el cableado de N
+    caminos x M semillas funcione: que cada camino sea una serie distinta, que la
+    descomposicion de varianza se arme, y que el ``t`` del drift se calcule sobre
+    la ventana de entrenamiento de cada camino.
+    """
+    pytest.importorskip("stable_baselines3")
+    from agents.protocol import run_multipath_arm
+    from data.fixtures import level_4_control
+
+    resultado = run_multipath_arm(
+        lambda semilla: level_4_control(400, seed=semilla),
+        label="humo",
+        path_seeds=[1, 2],
+        agent_seeds=[7, 8],
+        ppo_config=PPOConfig(total_timesteps=256, n_steps=64, batch_size=32),
+        allow_fewer_seeds=True,
+    )
+    assert resultado.n_paths == 2
+    assert len(resultado.drift_t_by_path) == 2
+    # Caminos distintos: el drift muestral no puede coincidir.
+    assert resultado.drift_t_by_path[0] != resultado.drift_t_by_path[1]
+    descomposicion = resultado.decompositions["excess_log_growth_vs_always_long"]
+    assert descomposicion.n_paths == 2
+    assert descomposicion.n_seeds_per_path == 2
