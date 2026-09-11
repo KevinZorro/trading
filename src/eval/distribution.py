@@ -529,3 +529,128 @@ def decompose_variance(
         t_critical=critico,
         distinguishable_from_zero=bool(t is not None and abs(t) > critico),
     )
+
+
+@dataclass(frozen=True)
+class PairedDifference:
+    """Diferencia pareada de una metrica entre dos conjuntos de caminos.
+
+    Existe porque dos fixtures que solo difieren en un parametro **comparten la
+    realizacion del ruido**: ``generate_gbm_sv`` consume los mismos shocks para
+    la misma semilla, y cambiar ``mu`` solo mueve el termino deterministico del
+    drift. Medido: la diferencia de log-retornos entre el nivel 4a y el 4b con
+    la misma semilla es constante a 1e-15 y la correlacion entre los dos caminos
+    es exactamente 1.
+
+    Eso convierte la comparacion en un contraste **pareado**, que no es un
+    refinamiento estadistico sino la unica forma de aislar el parametro: la
+    varianza de mercado -que es la grande- se cancela dentro de cada par, y lo
+    que queda es el efecto del cambio.
+
+    Un contraste no pareado sobre los mismos numeros tendria que atravesar una
+    dispersion entre caminos que aqui es irrelevante, y podria no detectar un
+    efecto grande solo porque los caminos son ruidosos.
+    """
+
+    metric: str
+    label_a: str
+    label_b: str
+    n_pairs: int
+    differences: tuple[float, ...]
+    mean_a: float
+    mean_b: float
+    mean: float
+    std: float
+    standard_error: float
+    t_statistic: float | None
+    t_critical: float
+    distinguishable_from_zero: bool
+
+    def describe(self) -> dict[str, object]:
+        salida = dict(vars(self))
+        salida["differences"] = list(self.differences)
+        return salida
+
+    def render(self) -> str:
+        t = (
+            "deterministica"
+            if self.t_statistic is None and self.distinguishable_from_zero
+            else "n/a"
+            if self.t_statistic is None
+            else f"{self.t_statistic:+.2f}"
+        )
+        veredicto = (
+            "DISTINGUIBLE de cero"
+            if self.distinguishable_from_zero
+            else "NO distinguible de cero"
+        )
+        return (
+            f"{self.metric}: {self.label_b} {self.mean_b:+.4f} contra "
+            f"{self.label_a} {self.mean_a:+.4f}  ->  diferencia pareada "
+            f"{self.mean:+.4f} (sigma {self.std:.4f}, N={self.n_pairs} pares)  "
+            f"t={t} contra {self.t_critical:.3f}  {veredicto}"
+        )
+
+
+def paired_difference(
+    a: VarianceDecomposition,
+    b: VarianceDecomposition,
+    *,
+    label_a: str,
+    label_b: str,
+) -> PairedDifference:
+    """Contrasta ``b - a`` camino por camino, no promedio contra promedio.
+
+    Exige el mismo numero de caminos y la misma metrica: parear medianas de
+    caminos que no se corresponden entre si produciria un numero sin
+    interpretacion.
+    """
+    if a.metric != b.metric:
+        raise DistributionError(
+            f"no se pueden parear metricas distintas: {a.metric!r} y {b.metric!r}"
+        )
+    if a.n_paths != b.n_paths:
+        raise DistributionError(
+            f"{a.n_paths} caminos contra {b.n_paths}: el pareo exige "
+            "correspondencia uno a uno"
+        )
+    if a.n_paths < 2:
+        raise DistributionError("hacen falta al menos 2 pares")
+
+    diferencias = np.asarray(b.path_medians, dtype=np.float64) - np.asarray(
+        a.path_medians, dtype=np.float64
+    )
+    n = diferencias.size
+    media = float(diferencias.mean())
+    desvio = float(diferencias.std(ddof=1))
+    error = desvio / math.sqrt(n)
+    critico = t_critical_95(n - 1)
+
+    # Diferencia constante entre pares: la dispersion es nula y el cociente no
+    # esta definido. **Eso no la vuelve indistinguible de cero, la vuelve
+    # deterministica**: si todos los pares se mueven exactamente lo mismo y ese
+    # movimiento no es cero, el efecto esta ahi sin ruido que lo discuta.
+    # Devolver "no distinguible" ahi seria reportar la conclusion opuesta a la
+    # que los datos sostienen. Mismo criterio de tolerancia relativa que el
+    # resto del proyecto para "dispersion nula".
+    if desvio <= abs(media) * DISPERSION_NULA_REL:
+        t = None
+        distinguible = abs(media) > 0.0
+    else:
+        t = media / error if error > 0 else None
+        distinguible = bool(t is not None and abs(t) > critico)
+    return PairedDifference(
+        metric=a.metric,
+        label_a=label_a,
+        label_b=label_b,
+        n_pairs=n,
+        differences=tuple(float(x) for x in diferencias),
+        mean_a=a.mean,
+        mean_b=b.mean,
+        mean=media,
+        std=desvio,
+        standard_error=error,
+        t_statistic=t,
+        t_critical=critico,
+        distinguishable_from_zero=distinguible,
+    )

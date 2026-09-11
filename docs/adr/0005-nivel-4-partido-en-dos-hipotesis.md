@@ -129,7 +129,52 @@ como exige el principio 5.
 nivel 3 en el ADR 0004: después de ver el resultado, cualquier umbral se puede
 justificar.
 
-## Decisión 3 — El orden entre 4a y 4b
+## Decisión 3 — **El par es lo que carga la evidencia, no cada nivel por separado**
+
+Un veredicto de 4b aislado **no distingue dos comportamientos muy distintos**:
+
+- el agente **reconoce el drift** y por eso se invierte; o
+- el agente **compra por defecto** y se habría invertido igual sin drift.
+
+Con μ=0.42 los dos satisfacen los tres criterios del 4b. El nivel por sí solo no
+puede separarlos, y reportarlo como si pudiera sería sobreinterpretar un PASS.
+
+Lo que los separa es la **diferencia contra el 4a**, que es el mismo proceso sin
+drift detectable: un agente que compra por defecto también está invertido en 4a y
+su diferencia es cero. Hay un test que lo fija: un agente al 95% en ambos
+fixtures **pasa** el 4b y **falla** el par.
+
+### El contraste es pareado, y no por elegancia
+
+`generate_gbm_sv` consume los mismos shocks para la misma semilla, así que 4a y
+4b con la semilla `s` comparten la realización del ruido **y la del proceso de
+varianza**: `mu` solo entra en el término determinista del drift. Verificado a
+precisión de máquina: la diferencia entre los log-retornos de los dos fixtures
+con la misma semilla es la constante `(μ_b − μ_a)/252 = 1.349e-3`, con desvío
+1.4e-15, y la correlación entre los dos caminos es exactamente 1.
+
+La varianza de mercado —que es la grande, σ≈0.49 en el nivel 4a— **se cancela
+dentro de cada par**, y lo que queda es el efecto de `mu`. Un contraste no
+pareado tendría que atravesar esa dispersión y podría no detectar un efecto
+grande solo porque los caminos son ruidosos.
+
+### El criterio del par
+
+La diferencia pareada de tiempo invertido entre 4b y 4a es **positiva y se
+distingue de cero** (t de dos colas al 95%, N=10 pares).
+
+El umbral es **cero** y no un número elegido: la hipótesis nula es "el agente se
+comporta igual con drift y sin drift", y cualquier umbral positivo la estaría
+reemplazando por otra hipótesis.
+
+Un detalle que los tests destaparon y vale documentar: si la diferencia entre
+pares fuera **constante** —dispersión nula— el estadístico `t` no está definido,
+pero eso **no** vuelve al efecto indistinguible de cero: lo vuelve determinista.
+La primera versión del código devolvía "no distinguible" en ese caso, que es la
+conclusión opuesta a la que los datos sostienen. Corregido con el mismo criterio
+de tolerancia relativa que el resto del proyecto usa para dispersión nula.
+
+## Decisión 4 — El orden entre 4a y 4b
 
 4b se evalúa **después** de 4a y se saltea si 4a falla. Medir si el agente
 reconoce drift real solo tiene sentido una vez establecido que no inventa señal

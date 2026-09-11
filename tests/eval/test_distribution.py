@@ -20,6 +20,7 @@ from eval.distribution import (
     deflated_sharpe,
     drift_t_statistic,
     expected_max_sharpe,
+    paired_difference,
     probabilistic_sharpe_ratio,
     summarize,
     t_critical_95,
@@ -290,3 +291,81 @@ def test_el_t_del_drift_rechaza_series_degeneradas() -> None:
         drift_t_statistic(np.array([0.01]))
     with pytest.raises(DistributionError, match="dispersion nula"):
         drift_t_statistic(np.full(50, 0.01))
+
+
+# ---------------------------------------------------------------------------
+# Diferencia pareada
+# ---------------------------------------------------------------------------
+
+
+def decomposicion(valores: list[float], metric: str = "x") -> object:
+    return decompose_variance(metric, [[v] * 5 for v in valores])
+
+
+def test_el_pareo_cancela_la_varianza_entre_caminos() -> None:
+    """Es el punto entero del contraste pareado.
+
+    Los caminos son muy dispersos entre si, pero la diferencia dentro de cada
+    par es casi constante. Un contraste no pareado no detectaria nada; el
+    pareado lo detecta sin esfuerzo.
+    """
+    base = [-1.0, -0.6, -0.2, 0.1, 0.3, 0.5, 0.8, 1.1, 1.4, 1.8]
+    a = decomposicion(base)
+    b = decomposicion([v + 0.20 for v in base])
+
+    sin_parear = decompose_variance(
+        "x", [[v] * 5 for v in base + [v + 0.2 for v in base]]
+    )
+    assert sin_parear.between_path_std > 0.8
+
+    d = paired_difference(a, b, label_a="a", label_b="b")
+    assert d.mean == pytest.approx(0.20)
+    assert d.distinguishable_from_zero is True
+
+
+def test_una_diferencia_constante_es_deterministica_y_no_indistinguible() -> None:
+    """**La correccion que encontraron los tests del par.**
+
+    Si todos los pares se mueven exactamente lo mismo y ese movimiento no es
+    cero, la dispersion es nula y el cociente no esta definido. Eso no vuelve al
+    efecto indistinguible de cero: lo vuelve deterministico. Devolver "no
+    distinguible" seria reportar la conclusion opuesta a la que los datos
+    sostienen.
+    """
+    a = decomposicion([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    b = decomposicion(
+        [v + 0.5 for v in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)]
+    )
+    d = paired_difference(a, b, label_a="a", label_b="b")
+    assert d.std == pytest.approx(0.0, abs=1e-12)
+    assert d.t_statistic is None
+    assert d.distinguishable_from_zero is True
+    assert "deterministica" in d.render()
+
+
+def test_una_diferencia_nula_y_constante_no_se_distingue_de_cero() -> None:
+    """El otro lado: sin diferencia y sin dispersion, no hay efecto."""
+    valores = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    d = paired_difference(
+        decomposicion(valores), decomposicion(valores), label_a="a", label_b="b"
+    )
+    assert d.mean == pytest.approx(0.0)
+    assert d.distinguishable_from_zero is False
+
+
+def test_el_pareo_exige_la_misma_metrica_y_el_mismo_numero_de_caminos() -> None:
+    valores = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    with pytest.raises(DistributionError, match="metricas distintas"):
+        paired_difference(
+            decomposicion(valores, "a"),
+            decomposicion(valores, "b"),
+            label_a="a",
+            label_b="b",
+        )
+    with pytest.raises(DistributionError, match="correspondencia uno a uno"):
+        paired_difference(
+            decomposicion(valores),
+            decomposicion(valores[:5]),
+            label_a="a",
+            label_b="b",
+        )

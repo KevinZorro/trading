@@ -59,6 +59,7 @@ from eval.distribution import (
     VarianceDecomposition,
     decompose_variance,
     drift_t_statistic,
+    paired_difference,
     summarize,
 )
 from eval.report import RunReport, evaluate_run
@@ -135,6 +136,11 @@ class ProtocolThresholds:
       Se usa la dispersion de la accion y no la rotacion anualizada porque esta
       ultima mezcla el comportamiento con el crecimiento del equity y con el
       rebalanceo al peso objetivo.
+    - ``level_4_pair_min_time_invested_gap = 0.0``: el criterio **del par**. La
+      diferencia pareada de tiempo invertido entre 4b y 4a tiene que ser
+      positiva y distinguirse de cero. Cero es el umbral correcto y no un numero
+      elegido: la hipotesis nula es "el agente se comporta igual con drift y sin
+      drift", y cualquier umbral positivo la estaria reemplazando por otra.
     """
 
     level_0_min_capture: float = 0.80
@@ -145,6 +151,7 @@ class ProtocolThresholds:
     level_4b_min_drift_t: float = 3.0
     level_4b_min_time_invested: float = 0.80
     level_4b_max_action_std: float = 0.15
+    level_4_pair_min_time_invested_gap: float = 0.0
 
     def describe(self) -> dict[str, object]:
         return dict(vars(self))
@@ -869,6 +876,10 @@ def assemble_protocol(
     if level_4b is None:
         return reporte
     reporte.levels.append(evaluate_level_4b(level_4b, thresholds))
+    # El par va al final y a proposito: es el que carga la evidencia, y leerlo
+    # despues de los dos veredictos individuales es lo que evita concluir de 4b
+    # solo algo que 4b solo no puede decir.
+    reporte.levels.append(evaluate_level_4_pair(level_4a, level_4b, thresholds))
     return reporte
 
 
@@ -1157,4 +1168,98 @@ def evaluate_level_4b(
         criterio,
         hallazgo,
         result.arms,
+    )
+
+
+def evaluate_level_4_pair(
+    level_4a: MultiPathResult,
+    level_4b: MultiPathResult,
+    thresholds: ProtocolThresholds,
+) -> LevelResult:
+    """El par 4a-4b. **Aca vive la evidencia, no en cada nivel por separado.**
+
+    Un veredicto de 4b aislado no distingue dos comportamientos muy distintos:
+
+    - el agente **reconoce el drift** y por eso se invierte; o
+    - el agente **compra por defecto** y se habria invertido igual sin drift.
+
+    Con ``mu = 0.42`` los dos satisfacen los tres criterios del 4b, asi que el
+    nivel por si solo no puede separarlos. Lo que los separa es la **diferencia**
+    contra el 4a, que es el mismo proceso sin drift detectable: un agente que
+    compra por defecto tambien esta invertido en 4a y su diferencia es cero.
+
+    El contraste es **pareado**, y no por elegancia. ``generate_gbm_sv`` consume
+    los mismos shocks para la misma semilla, asi que 4a y 4b con la semilla ``s``
+    comparten la realizacion del ruido y la del proceso de varianza: la
+    diferencia entre sus log-retornos es una constante igual a
+    ``(mu_b - mu_a)/bars_per_year``, verificada a 1e-15, y la correlacion entre
+    los dos caminos es exactamente 1. La varianza de mercado -que es la grande-
+    se cancela dentro de cada par y queda solo el efecto de ``mu``.
+
+    La hipotesis nula del par es "el agente se comporta igual con drift y sin
+    drift", asi que el umbral es **cero**: cualquier numero positivo la
+    reemplazaria por otra hipotesis.
+    """
+    criterio = (
+        "la diferencia PAREADA de tiempo invertido entre 4b y 4a es positiva y "
+        "se distingue de cero (t de dos colas al 95%). Es el criterio que separa "
+        "'reconoce el drift' de 'compra por defecto': 4b por si solo no puede"
+    )
+    if level_4a.path_seeds != level_4b.path_seeds:
+        return LevelResult(
+            4,
+            "4a<->4b el par",
+            Verdict.FAIL,
+            criterio,
+            "los dos niveles no comparten las semillas de camino, asi que no "
+            f"hay pares que contrastar: {level_4a.path_seeds} contra "
+            f"{level_4b.path_seeds}",
+            (),
+        )
+
+    brecha = paired_difference(
+        level_4a.decompositions["time_invested"],
+        level_4b.decompositions["time_invested"],
+        label_a="4a (sin drift detectable)",
+        label_b="4b (drift detectable)",
+    )
+    exceso = paired_difference(
+        level_4a.decompositions["excess_log_growth_vs_always_long"],
+        level_4b.decompositions["excess_log_growth_vs_always_long"],
+        label_a="4a",
+        label_b="4b",
+    )
+    responde = (
+        brecha.distinguishable_from_zero
+        and brecha.mean > thresholds.level_4_pair_min_time_invested_gap
+    )
+    hallazgo = (
+        f"metrica principal -> {brecha.render()}. "
+        f"Exceso sobre estar invertido: {exceso.render()}. "
+        f"t del drift: 4a mediana {float(np.median(level_4a.drift_t_by_path)):+.2f}, "
+        f"4b mediana {float(np.median(level_4b.drift_t_by_path)):+.2f}"
+    )
+    if responde:
+        hallazgo += (
+            ". El agente SE INVIERTE MAS cuando el drift es detectable: responde "
+            "al drift en vez de comprar por defecto."
+        )
+    elif brecha.distinguishable_from_zero:
+        hallazgo += (
+            ". La diferencia se distingue de cero pero va en el sentido "
+            "equivocado: el agente se invierte MENOS cuando hay drift."
+        )
+    else:
+        hallazgo += (
+            ". El agente se comporta igual con drift y sin drift. Si ademas "
+            "paso el 4b, lo paso comprando por defecto, no reconociendo el "
+            "drift: el par es lo unico que lo revela."
+        )
+    return LevelResult(
+        4,
+        "4a<->4b el par",
+        Verdict.PASS if responde else Verdict.FAIL,
+        criterio,
+        hallazgo,
+        (),
     )
