@@ -183,6 +183,46 @@ donde no la hay; al revés, un 4b que pasa podría estar pasando por sobreajuste
 Los dos llevan `level = 4` en el reporte y se distinguen por etiqueta: no son
 dos niveles, son las dos hipótesis del mismo.
 
+## Resultado (añadido después de correr, con el criterio ya registrado)
+
+Los criterios de arriba se commitearon antes de ejecutar nada: `13b0ae1` para
+4b, `2775631` para el par. El log de la corrida registra el primer hash.
+
+| | Veredicto | Números |
+|---|---|---|
+| **4a** control negativo puro | ✅ PASS | exceso `t = +0.69` contra 2.262 → **no distinguible de cero** |
+| **4b** drift detectable | ❌ FAIL | `t` del drift +5.77; tiempo invertido **0.63** (< 0.80); dispersión de la acción **0.383** (> 0.15) |
+| **par 4a↔4b** | ✅ PASS | diferencia pareada de tiempo invertido **+0.3065**, `t = +14.58` |
+
+### Lo que dice el par, y que ninguno de los dos niveles dice solo
+
+**El agente sí responde al drift.** Pasa de 0.33 a 0.63 de tiempo invertido entre
+los dos fixtures, una diferencia pareada de +0.31 con `t = 14.6`. No compra por
+defecto: si lo hiciera, estaría igual de invertido en 4a y la diferencia sería
+cero. Esa era la hipótesis que 4b por sí solo no podía descartar, y queda
+descartada.
+
+**Y aun así no aprovecha el drift.** 0.63 no es 0.80, y la dispersión de la
+acción es 0.383 contra un umbral de 0.15: el agente sigue entrando y saliendo
+cuando el óptimo es quedarse quieto. El exceso sobre estar siempre invertido en
+4b es **−0.65** (`t = −7.33`): deja mucha plata sobre la mesa.
+
+La lectura conjunta es **reconocimiento parcial**: detecta la dirección con
+altísima confianza estadística y no la explota. Ese es un diagnóstico distinto
+tanto de "no reconoce nada" como de "reconoce y converge", y solo el par lo
+produce.
+
+**4b no se relaja por esto.** Falla, y falla por los dos criterios. Que el par
+explique *qué* clase de fallo es no lo convierte en un pase.
+
+### Consecuencia para los datos reales
+
+Un agente que reconoce la dirección pero no se compromete con ella va a quedar
+sistemáticamente por debajo de buy-and-hold en un activo con drift fuerte.
+BTCUSDT desde 2017 es exactamente eso. No es una predicción registrada —se
+deriva de lo medido, no se arriesga antes— pero conviene tenerla escrita antes
+de mirar el resultado, para no descubrirla después como si fuera un hallazgo.
+
 ## Lo que este ADR no cambia
 
 - El criterio del exceso de 4a, que es el que fallaba y ahora pasa.
