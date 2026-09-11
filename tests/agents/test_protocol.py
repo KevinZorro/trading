@@ -20,6 +20,7 @@ from agents.policy import ConstantWeightPolicy
 from agents.ppo import PPOConfig
 from agents.protocol import (
     ArmResult,
+    MultiPathResult,
     ProtocolThresholds,
     SeedRun,
     Verdict,
@@ -32,7 +33,7 @@ from agents.protocol import (
     run_arm,
 )
 from data.fixtures import level_0_deterministic, level_1_noisy
-from eval.distribution import summarize
+from eval.distribution import decompose_variance, summarize
 
 SEMILLAS = list(range(10))
 UMBRALES = ProtocolThresholds()
@@ -245,47 +246,158 @@ def test_nivel_3_se_mide_y_no_se_aprueba() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_nivel_4_aprueba_al_converger_a_estar_invertido() -> None:
+def multicamino(
+    label: str = "level_4",
+    *,
+    excesos: list[float],
+    invertido: float = 0.95,
+    dispersion_semillas: float = 0.02,
+    drift_t: float = 1.8,
+) -> MultiPathResult:
+    """Construye un resultado multi-camino con excesos por camino dados.
+
+    ``excesos[i]`` es el exceso mediano del camino ``i``; las semillas de ese
+    camino se generan alrededor con ``dispersion_semillas``, que es la varianza
+    de **entrenamiento**. La de mercado sale de la dispersion de ``excesos``.
+    """
+    brazos = []
+    for k, exceso in enumerate(excesos):
+        corridas = tuple(
+            corrida(
+                s,
+                excess_log_growth_vs_always_long=exceso
+                + dispersion_semillas * ((i % 3) - 1),
+                time_invested=invertido,
+            )
+            for i, s in enumerate(SEMILLAS)
+        )
+        base = brazo(f"{label}:path{k}")
+        brazos.append(
+            ArmResult(
+                label=base.label,
+                fixture_name=base.fixture_name,
+                fixture_config=base.fixture_config,
+                ppo_config=base.ppo_config,
+                runs=corridas,
+                distributions={
+                    m: summarize(m, SEMILLAS, [getattr(c, m) for c in corridas])
+                    for m in _METRICAS
+                },
+                ceiling=base.ceiling,
+                baselines=base.baselines,
+            )
+        )
+    tupla = tuple(brazos)
+    return MultiPathResult(
+        label=label,
+        path_seeds=tuple(range(len(excesos))),
+        agent_seeds=tuple(SEMILLAS),
+        arms=tupla,
+        decompositions={
+            m: decompose_variance(m, [[getattr(c, m) for c in a.runs] for a in tupla])
+            for m in (
+                "excess_log_growth_vs_always_long",
+                "log_growth",
+                "total_return_mark",
+                "time_invested",
+                "turnover_annualized",
+            )
+        },
+        drift_t_by_path=tuple([drift_t] * len(excesos)),
+        ppo_config={"total_timesteps": 1},
+    )
+
+
+def test_nivel_4_aprueba_cuando_el_exceso_no_se_distingue_de_cero() -> None:
+    """Excesos que cambian de signo entre caminos: es el sorteo, no el agente."""
     resultado = evaluate_level_4(
-        brazo(
-            "level_4",
-            time_invested=0.97,
-            excess_log_growth_vs_always_long=0.001,
-            turnover_annualized=0.08,
-        ),
+        multicamino(excesos=[0.4, -0.3, 0.2, -0.5, 0.1, -0.2, 0.3, -0.1, 0.0, 0.15]),
         UMBRALES,
     )
     assert resultado.verdict is Verdict.PASS
+    assert "NO distinguible de cero" in resultado.finding
 
 
-def test_nivel_4_falla_si_el_agente_le_gana_al_ruido() -> None:
-    """Ganarle a una serie sin senal es sobreajuste, no habilidad."""
+def test_el_hallazgo_que_motivo_el_cambio_de_criterio_ya_no_pasa_por_senal() -> None:
+    """La regresion que importa.
+
+    El criterio viejo comparaba la mediana del exceso contra 0.05 y declaraba
+    significativo un +0.164 medido sobre **un** camino. Con la dispersion entre
+    caminos del control negativo -sigma ~0.78- ese mismo +0.164 no se distingue
+    de cero, que es la lectura correcta.
+    """
+    alrededor = [
+        0.164 + d for d in (0.9, -1.1, 0.4, -0.7, 1.2, -0.5, 0.2, -0.9, 0.6, -0.3)
+    ]
+    descomposicion = evaluate_level_4(multicamino(excesos=alrededor), UMBRALES)
+    assert descomposicion.verdict is Verdict.PASS
+    assert "NO distinguible de cero" in descomposicion.finding
+
+
+def test_nivel_4_falla_si_el_exceso_sobrevive_a_la_dispersion_entre_caminos() -> None:
+    """Un exceso consistente en todos los caminos si es senal, y hay que entenderla."""
     resultado = evaluate_level_4(
-        brazo(
-            "level_4",
-            time_invested=0.95,
-            excess_log_growth_vs_always_long=0.30,
-            turnover_annualized=0.1,
+        multicamino(
+            excesos=[0.30, 0.32, 0.29, 0.31, 0.33, 0.28, 0.30, 0.34, 0.29, 0.31]
         ),
         UMBRALES,
     )
     assert resultado.verdict is Verdict.FAIL
-    assert "le gana a una serie sin senal" in resultado.finding
+    assert "extrae algo de una serie sin senal" in resultado.finding
 
 
 def test_nivel_4_falla_si_no_converge_a_estar_invertido() -> None:
-    """Sobre Heston estar afuera cuesta drift y no compra nada."""
     resultado = evaluate_level_4(
-        brazo(
-            "level_4",
-            time_invested=0.30,
-            excess_log_growth_vs_always_long=-0.2,
-            turnover_annualized=5.0,
+        multicamino(
+            excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05],
+            invertido=0.31,
         ),
         UMBRALES,
     )
     assert resultado.verdict is Verdict.FAIL
     assert "No converge a estar invertido" in resultado.finding
+
+
+def test_nivel_4_exige_caminos_suficientes() -> None:
+    """Con pocos caminos las dos varianzas no se separan, que es todo el punto."""
+    resultado = evaluate_level_4(multicamino(excesos=[0.1, -0.1, 0.2]), UMBRALES)
+    assert resultado.verdict is Verdict.FAIL
+    assert "no se separan" in resultado.finding
+
+
+def test_el_t_del_drift_va_al_lado_del_veredicto() -> None:
+    """Si el drift no es detectable, "converger a estar invertido" pide lo imposible.
+
+    El numero tiene que estar en el hallazgo, no en una nota al pie: sin el, un
+    fallo del nivel se lee como un fallo del agente.
+    """
+    no_detectable = evaluate_level_4(
+        multicamino(
+            excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05], drift_t=1.8
+        ),
+        UMBRALES,
+    )
+    assert "NO detectable" in no_detectable.finding
+    detectable = evaluate_level_4(
+        multicamino(
+            excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05], drift_t=4.0
+        ),
+        UMBRALES,
+    )
+    assert "DETECTABLE" in detectable.finding
+
+
+def test_el_multicamino_se_reconstruye_desde_su_json() -> None:
+    original = multicamino(
+        excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05]
+    )
+    copia = MultiPathResult.from_dict(json.loads(json.dumps(original.describe())))
+    assert copia.n_paths == original.n_paths
+    assert copia.drift_t_by_path == original.drift_t_by_path
+    esperado = original.decompositions["excess_log_growth_vs_always_long"]
+    assert copia.decompositions[
+        "excess_log_growth_vs_always_long"
+    ].mean == pytest.approx(esperado.mean)
 
 
 # ---------------------------------------------------------------------------
@@ -302,7 +414,7 @@ def test_el_protocolo_para_en_el_nivel_0_y_saltea_el_resto() -> None:
         level_2=brazo("level_2", turnover_annualized=10.0),
         level_2_reference=brazo("level_1", turnover_annualized=40.0),
         level_3=[brazo("level_3")],
-        level_4=brazo("level_4"),
+        level_4=multicamino(excesos=[0.1] * 10),
     )
     assert reporte.stopped_at == 0
     veredictos = [n.verdict for n in reporte.levels]
@@ -327,11 +439,8 @@ def test_el_protocolo_completo_no_reporta_parada() -> None:
         level_2=brazo("level_2", turnover_annualized=10.0),
         level_2_reference=brazo("level_1", turnover_annualized=40.0),
         level_3=[brazo("level_3")],
-        level_4=brazo(
-            "level_4",
-            time_invested=0.95,
-            excess_log_growth_vs_always_long=0.0,
-            turnover_annualized=0.08,
+        level_4=multicamino(
+            excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05]
         ),
     )
     assert reporte.stopped_at is None

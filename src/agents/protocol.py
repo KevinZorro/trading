@@ -54,7 +54,13 @@ from data.schema import FloatArray
 from envs.observation import ObservationSpec
 from envs.rewards import NetReturnReward
 from envs.trading_env import EnvConfig
-from eval.distribution import SeedDistribution, summarize
+from eval.distribution import (
+    SeedDistribution,
+    VarianceDecomposition,
+    decompose_variance,
+    drift_t_statistic,
+    summarize,
+)
 from eval.report import RunReport, evaluate_run
 from sim.engine import SimConfig, SimResult
 from sim.sizing import TargetWeightSizer
@@ -96,17 +102,24 @@ class ProtocolThresholds:
       siempre, incluso para un agente perfectamente convergido. Lo que si
       captura "no rota" es ``level_4_min_time_invested``: un agente que se queda
       invertido el 95% del tiempo no esta entrando y saliendo.
-    - ``level_4_max_median_excess = 0.05``: si la mediana del exceso de
-      crecimiento sobre estar siempre invertido supera un 5%, el agente esta
-      extrayendo algo de una serie donde no hay nada que extraer, y eso hay que
-      entenderlo antes de seguir.
+    - ``level_4_min_paths = 10``: el criterio del exceso **no** es un umbral
+      sobre la mediana. Es un contraste contra la dispersion **entre caminos**,
+      y para eso hacen falta caminos. Diez semillas sobre uno solo miden
+      varianza de entrenamiento, que es otra pregunta. Ver
+      ``eval.distribution.decompose_variance``.
+
+    Un umbral que estuvo y se quito: ``level_4_max_median_excess = 0.05``, que
+    comparaba la mediana del exceso contra un numero fijo. Fallaba con +0.164
+    sobre un camino cuyo baseline tenia desvio 0.781 entre caminos: declaraba
+    significativo algo cinco veces mas chico que el ruido del sorteo. El umbral
+    no era demasiado laxo ni demasiado estricto, estaba mal planteado.
     """
 
     level_0_min_capture: float = 0.80
     level_1_monotonia_tol: float = 0.10
     level_1_min_capture_highest_snr: float = 0.50
     level_2_min_turnover_drop: float = 0.10
-    level_4_max_median_excess: float = 0.05
+    level_4_min_paths: int = 10
     level_4_min_time_invested: float = 0.80
 
     def describe(self) -> dict[str, object]:
@@ -746,67 +759,6 @@ def evaluate_level_3(arms: Sequence[ArmResult]) -> LevelResult:
     )
 
 
-def evaluate_level_4(arm: ArmResult, thresholds: ProtocolThresholds) -> LevelResult:
-    """Control negativo: el agente tiene que converger a estar invertido y no rotar.
-
-    Sobre Heston la direccion es impredecible por construccion, asi que el optimo
-    **es** estar siempre invertido. Un agente que gana aca esta sobreajustando
-    ruido, y hay que entenderlo antes de mirar datos reales.
-
-    Los tres criterios son a la vez: rotar poco, estar invertido casi siempre, y
-    no exceder materialmente a la referencia. Uno solo no alcanza -un agente que
-    rota poco pero se queda afuera la mitad del tiempo tampoco converge a la
-    referencia-.
-    """
-    criterio = (
-        f"tiempo invertido mediano >= {thresholds.level_4_min_time_invested:.0%} "
-        f"y exceso de crecimiento mediano sobre estar siempre invertido <= "
-        f"{thresholds.level_4_max_median_excess:.2f}. La rotacion se reporta pero "
-        "no entra en el veredicto (ver ProtocolThresholds)"
-    )
-    rotacion = arm.median("turnover_annualized")
-    invertido = arm.median("time_invested")
-    exceso = arm.median("excess_log_growth_vs_always_long")
-    referencia = float(arm.baselines["buy_and_hold"]["turnover_annualized"])
-    if rotacion is None or invertido is None or exceso is None:
-        return LevelResult(
-            4,
-            "control negativo (Heston)",
-            Verdict.FAIL,
-            criterio,
-            "faltan metricas para juzgar el nivel",
-            (arm,),
-        )
-    ok = (
-        exceso <= thresholds.level_4_max_median_excess
-        and invertido >= thresholds.level_4_min_time_invested
-    )
-    hallazgo = (
-        f"tiempo invertido mediano {invertido:.2f}, rotacion anualizada mediana "
-        f"{rotacion:.2f} (buy-and-hold {referencia:.2f}), exceso de crecimiento "
-        f"mediano sobre estar siempre invertido {exceso:+.3f}, "
-        f"{arm.distributions['excess_log_growth_vs_always_long'].n_valid} semillas"
-    )
-    if exceso > thresholds.level_4_max_median_excess:
-        hallazgo += (
-            ". El agente le gana a una serie sin senal: hay que entender de "
-            "donde sale antes de seguir."
-        )
-    if invertido < thresholds.level_4_min_time_invested:
-        hallazgo += (
-            ". No converge a estar invertido: sobre Heston estar afuera cuesta "
-            "drift y no compra nada."
-        )
-    return LevelResult(
-        4,
-        "control negativo (Heston)",
-        Verdict.PASS if ok else Verdict.FAIL,
-        criterio,
-        hallazgo,
-        (arm,),
-    )
-
-
 def assemble_protocol(
     thresholds: ProtocolThresholds,
     *,
@@ -815,7 +767,7 @@ def assemble_protocol(
     level_2: ArmResult | None = None,
     level_2_reference: ArmResult | None = None,
     level_3: Sequence[ArmResult] | None = None,
-    level_4: ArmResult | None = None,
+    level_4: MultiPathResult | None = None,
 ) -> ProtocolReport:
     """Arma el reporte aplicando los criterios en orden y **parando al fallar**.
 
@@ -871,3 +823,215 @@ def assemble_protocol(
         return reporte
     reporte.levels.append(evaluate_level_4(level_4, thresholds))
     return reporte
+
+
+# ---------------------------------------------------------------------------
+# Brazos sobre multiples caminos
+#
+# Un fixture sintetico se puede muestrear: cambiar la semilla del proceso da
+# otro camino del **mismo** mercado. Eso permite separar la varianza de mercado
+# de la de entrenamiento, y esa separacion es la que faltaba cuando el nivel 4
+# reporto un exceso de +0.164 sobre un camino cuyo baseline tiene desvio 0.781
+# entre caminos.
+#
+# En datos reales no se puede: la historia es un solo camino y N=1 por
+# construccion. La asimetria no se arregla, se declara -y es la razon de fondo
+# por la que ahi el walk-forward fuera de muestra es la unica defensa-.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MultiPathResult:
+    """Un nivel corrido sobre ``N`` caminos independientes x ``M`` semillas."""
+
+    label: str
+    path_seeds: tuple[int, ...]
+    agent_seeds: tuple[int, ...]
+    arms: tuple[ArmResult, ...]
+    decompositions: dict[str, VarianceDecomposition]
+    drift_t_by_path: tuple[float, ...]
+    ppo_config: dict[str, Any]
+
+    @property
+    def n_paths(self) -> int:
+        return len(self.arms)
+
+    @property
+    def drift_detectable(self) -> bool:
+        """¿El drift del proceso es detectable en la ventana de entrenamiento?
+
+        Se contrasta la **mediana** de los ``t`` por camino contra el valor
+        critico normal al 95%. Si no lo es, exigirle al agente que lo aprenda es
+        exigirle que extraiga algo que la muestra no contiene, y el criterio del
+        nivel hay que leerlo con eso adelante.
+        """
+        return bool(abs(float(np.median(self.drift_t_by_path))) > 1.96)
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "n_paths": self.n_paths,
+            "path_seeds": list(self.path_seeds),
+            "agent_seeds": list(self.agent_seeds),
+            "ppo": self.ppo_config,
+            "drift_t_by_path": list(self.drift_t_by_path),
+            "drift_t_median": float(np.median(self.drift_t_by_path)),
+            "drift_detectable": self.drift_detectable,
+            "decompositions": {k: v.describe() for k, v in self.decompositions.items()},
+            "arms": [a.describe() for a in self.arms],
+        }
+
+    @classmethod
+    def from_dict(cls, datos: dict[str, Any]) -> MultiPathResult:
+        brazos = tuple(ArmResult.from_dict(a) for a in datos["arms"])
+        return cls(
+            label=str(datos["label"]),
+            path_seeds=tuple(int(x) for x in datos["path_seeds"]),
+            agent_seeds=tuple(int(x) for x in datos["agent_seeds"]),
+            arms=brazos,
+            decompositions=_descomponer(brazos),
+            drift_t_by_path=tuple(float(x) for x in datos["drift_t_by_path"]),
+            ppo_config=dict(datos["ppo"]),
+        )
+
+
+#: Metricas que se descomponen en varianza de mercado y de entrenamiento.
+MULTIPATH_METRICS = (
+    "excess_log_growth_vs_always_long",
+    "log_growth",
+    "total_return_mark",
+    "time_invested",
+    "turnover_annualized",
+)
+
+
+def _descomponer(arms: tuple[ArmResult, ...]) -> dict[str, VarianceDecomposition]:
+    salida: dict[str, VarianceDecomposition] = {}
+    for metrica in MULTIPATH_METRICS:
+        por_camino = [[getattr(c, metrica) for c in brazo.runs] for brazo in arms]
+        salida[metrica] = decompose_variance(metrica, por_camino)
+    return salida
+
+
+def run_multipath_arm(
+    builder: Callable[[int], Fixture],
+    *,
+    label: str,
+    path_seeds: Sequence[int],
+    agent_seeds: Sequence[int],
+    ppo_config: PPOConfig,
+    policy_factory: PolicyFactory | None = None,
+    initial_cash: float = 100_000.0,
+    cash_rate: float = 0.0,
+    observation: ObservationSpec | None = None,
+    safety: float = 0.98,
+    allow_fewer_seeds: bool = False,
+) -> MultiPathResult:
+    """Corre el mismo nivel sobre ``N`` caminos, con ``M`` semillas cada uno.
+
+    ``builder`` recibe la semilla del **proceso** y devuelve el fixture. Que sea
+    una fabrica y no una lista de fixtures es lo que hace explicito que los
+    caminos son del mismo mercado con otra realizacion, y no cinco mercados
+    distintos.
+
+    El ``t`` del drift se calcula sobre la ventana de **entrenamiento** de cada
+    camino, que es la muestra de la que el agente podria aprenderlo.
+    """
+    brazos: list[ArmResult] = []
+    ts: list[float] = []
+    for semilla_camino in path_seeds:
+        fixture = builder(semilla_camino)
+        train, _, _ = fixture.split()
+        ts.append(drift_t_statistic(np.asarray(train.signal)[1:]))
+        brazos.append(
+            run_arm(
+                fixture,
+                label=f"{label}:path{semilla_camino}",
+                seeds=agent_seeds,
+                ppo_config=ppo_config,
+                policy_factory=policy_factory,
+                initial_cash=initial_cash,
+                cash_rate=cash_rate,
+                observation=observation,
+                safety=safety,
+                allow_fewer_seeds=allow_fewer_seeds,
+            )
+        )
+    return MultiPathResult(
+        label=label,
+        path_seeds=tuple(path_seeds),
+        agent_seeds=tuple(agent_seeds),
+        arms=tuple(brazos),
+        decompositions=_descomponer(tuple(brazos)),
+        drift_t_by_path=tuple(ts),
+        ppo_config=ppo_config.describe(),
+    )
+
+
+def evaluate_level_4(
+    result: MultiPathResult, thresholds: ProtocolThresholds
+) -> LevelResult:
+    """Control negativo, contrastado contra la dispersion **entre caminos**.
+
+    El criterio viejo comparaba la mediana del exceso contra un numero fijo, y
+    con eso declaro significativo un +0.164 sobre un camino cuyo baseline tiene
+    desvio 0.781 entre caminos. El criterio nuevo pregunta lo unico que se puede
+    preguntar sobre una serie sin senal: **¿el exceso se distingue de cero
+    cuando se lo mide contra el ruido del sorteo?**
+
+    El ``t`` del drift va en el reporte al lado del veredicto, no como nota al
+    pie: si el drift no es detectable en la ventana de entrenamiento, "converger
+    a estar invertido" le pide al agente aprender algo que la muestra no tiene, y
+    el resultado del nivel hay que leerlo con eso adelante.
+    """
+    criterio = (
+        f"sobre >= {thresholds.level_4_min_paths} caminos independientes, el "
+        "exceso de crecimiento sobre estar siempre invertido NO se distingue de "
+        "cero contrastado con la dispersion entre caminos (t de dos colas al "
+        f"95%), y el tiempo invertido mediano supera "
+        f"{thresholds.level_4_min_time_invested:.0%}"
+    )
+    if result.n_paths < thresholds.level_4_min_paths:
+        return LevelResult(
+            4,
+            "control negativo (Heston)",
+            Verdict.FAIL,
+            criterio,
+            f"solo hay {result.n_paths} caminos y el criterio necesita "
+            f"{thresholds.level_4_min_paths}: con menos, la varianza de mercado "
+            "y la de entrenamiento no se separan",
+            result.arms,
+        )
+
+    exceso = result.decompositions["excess_log_growth_vs_always_long"]
+    invertido = result.decompositions["time_invested"]
+    t_drift = float(np.median(result.drift_t_by_path))
+
+    exceso_ok = not exceso.distinguishable_from_zero
+    invertido_ok = invertido.mean >= thresholds.level_4_min_time_invested
+    hallazgo = (
+        f"exceso {exceso.render()}. Tiempo invertido medio entre caminos "
+        f"{invertido.mean:.2f} (sigma_mercado {invertido.between_path_std:.3f}). "
+        f"t del drift en entrenamiento: mediana {t_drift:+.2f}, "
+        f"{'DETECTABLE' if result.drift_detectable else 'NO detectable'} al 95%"
+    )
+    if not exceso_ok:
+        hallazgo += (
+            ". El exceso se distingue de cero incluso contra la dispersion "
+            "entre caminos: el agente extrae algo de una serie sin senal y hay "
+            "que entender que antes de seguir."
+        )
+    if not invertido_ok:
+        hallazgo += (
+            ". No converge a estar invertido. Si el drift no es detectable en "
+            "la ventana de entrenamiento, esto no es un fallo del agente: es "
+            "que no hay nada en la muestra que lo lleve ahi."
+        )
+    return LevelResult(
+        4,
+        "control negativo (Heston)",
+        Verdict.PASS if (exceso_ok and invertido_ok) else Verdict.FAIL,
+        criterio,
+        hallazgo,
+        result.arms,
+    )

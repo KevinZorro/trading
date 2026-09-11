@@ -49,8 +49,25 @@ con ese factor.
    no en post-procesamiento.
 4. **Ejecución nunca en la misma barra que generó la señal.** Decisión con close de `t`,
    ejecución al open de `t+1`.
-5. **Nunca reportar el mejor seed.** Toda métrica se reporta como distribución sobre >= 10
-   semillas: mediana, p25, p75, min, max.
+5. **Nunca reportar el mejor seed, y nunca confundir las dos varianzas.** Toda métrica
+   se reporta como distribución sobre >= 10 semillas: mediana, p25, p75, min, max. Pero
+   diez semillas sobre **un** camino miden varianza de *entrenamiento* —cuánto cambia el
+   resultado al reentrenar sobre la misma serie—, que no es varianza de *mercado*.
+   - **Sobre fixtures sintéticos, N caminos independientes × M semillas**, con las dos
+     varianzas reportadas por separado (`eval.distribution.decompose_variance`). Los
+     caminos se muestrean cambiando la semilla del proceso; las semillas del agente son
+     otro eje y no lo sustituyen. Un contraste contra cero usa el error estándar **entre
+     caminos**: hay N observaciones independientes, no N×M.
+   - **Sobre datos reales, N = 1 por construcción** —la historia es un solo camino— y se
+     declara como limitación en cada reporte. Esa asimetría es la razón de fondo por la
+     que el walk-forward fuera de muestra es la única defensa que queda ahí: no se puede
+     medir el error de muestreo, solo acotarlo con más ventanas.
+
+   Medido: en el nivel 4 el exceso del agente fue +0.164 con las diez semillas de acuerdo
+   entre sí, sobre un camino donde el baseline rindió −0.013. El desvío de ese mismo
+   baseline entre 20 caminos independientes es **0.781**. El "hallazgo" era cinco veces
+   más chico que la dispersión del sorteo, y ninguna cantidad de semillas lo habría
+   revelado.
 6. **Todo experimento incluye baselines**: buy-and-hold, aleatorio, cruce de medias.
 7. **Reproducibilidad total.** Seeds fijos, dependencias pinneadas, config serializada junto
    a cada resultado.
@@ -364,6 +381,19 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
 - **`summarize` falla con menos de 10 semillas.** El escape explícito enciende
   `below_minimum_seeds`, que sale en el JSON y en el render. Se puede producir un
   resultado con pocas semillas; lo que no se puede es que parezca uno con muchas.
+- **El criterio del nivel 4 es un contraste, no un umbral.** El exceso sobre estar
+  siempre invertido se compara contra la dispersión **entre caminos**, no contra un
+  número fijo. El umbral anterior (`max_median_excess = 0.05`) no era demasiado laxo ni
+  demasiado estricto: estaba mal planteado, porque medía una cantidad contra una escala
+  que no le correspondía. `decompose_variance` exige al menos dos caminos y el nivel 4
+  exige diez.
+- **El `t` del drift sobre la ventana de entrenamiento va al lado del veredicto del
+  nivel 4**, no en una nota al pie. Si el drift no es detectable en la muestra —en el
+  régimen `medium`, con μ=8% y 30% de volatilidad sobre 4800 barras, la mediana medida
+  sobre 10 caminos es 0.84, con rango −0.91 a +2.21— entonces
+  "converger a estar invertido" le pide al agente aprender algo que la muestra no
+  contiene, y un fallo del nivel no es un fallo del agente. `drift_t_statistic` lo
+  calcula y `MultiPathResult.drift_detectable` lo contrasta.
 - **Entrenar y juzgar son dos comandos** (`agents.cli arm` / `assemble`). Los
   criterios se aplican siempre sobre resultados guardados: revisar un umbral no
   exige reentrenar, y si alguien lo cambia después de ver los números, se ve en
