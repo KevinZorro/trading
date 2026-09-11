@@ -113,6 +113,28 @@ class ProtocolThresholds:
     sobre un camino cuyo baseline tenia desvio 0.781 entre caminos: declaraba
     significativo algo cinco veces mas chico que el ruido del sorteo. El umbral
     no era demasiado laxo ni demasiado estricto, estaba mal planteado.
+
+    Otro que se movio de nivel: el tiempo invertido **salio del 4a**. Sobre un
+    fixture cuyo drift no es detectable (t poblacional 0.51), abstenerse no es un
+    error sino la respuesta defendible a una serie donde no hay senal que seguir.
+    Exigir convergencia ahi mezclaba dos hipotesis en un solo veredicto. La
+    pregunta "¿reconoce drift cuando existe?" es legitima y ahora vive en el
+    **nivel 4b**, con un fixture calibrado para que la respuesta sea posible.
+
+    Umbrales del 4b, declarados antes de correrlo (ver ADR 0005):
+
+    - ``level_4b_min_drift_t = 3.0``: **condicion sobre el fixture, no sobre el
+      agente**. Si el ``t`` mediano del drift en la ventana de entrenamiento no
+      llega a 3, el fixture no tiene lo que dice tener y el nivel no puede medir
+      lo que pretende. El calculo esta en ``data.fixtures.drift_t_population``.
+    - ``level_4b_min_time_invested = 0.80``: con drift detectable y sin senal
+      direccional, el optimo es estar invertido.
+    - ``level_4b_max_action_std = 0.15``: "no rota". Una politica fija en 1.0 da
+      dispersion 0; una que alterna entre 0 y 1 la mitad del tiempo da 0.5. El
+      umbral admite oscilar entre 0.8 y 1.0 (dispersion ~0.1) y excluye rotar.
+      Se usa la dispersion de la accion y no la rotacion anualizada porque esta
+      ultima mezcla el comportamiento con el crecimiento del equity y con el
+      rebalanceo al peso objetivo.
     """
 
     level_0_min_capture: float = 0.80
@@ -120,7 +142,9 @@ class ProtocolThresholds:
     level_1_min_capture_highest_snr: float = 0.50
     level_2_min_turnover_drop: float = 0.10
     level_4_min_paths: int = 10
-    level_4_min_time_invested: float = 0.80
+    level_4b_min_drift_t: float = 3.0
+    level_4b_min_time_invested: float = 0.80
+    level_4b_max_action_std: float = 0.15
 
     def describe(self) -> dict[str, object]:
         return dict(vars(self))
@@ -141,6 +165,7 @@ class SeedRun:
     max_drawdown_mark: float
     turnover_annualized: float
     time_invested: float
+    action_std: float
     saturation: float
     clipped_actions: int
     n_round_trips: int
@@ -330,6 +355,12 @@ def _seed_run(
         max_drawdown_mark=report.mark.drawdown.depth,
         turnover_annualized=report.turnover.annualized,
         time_invested=float(np.mean(outcome.actions)) if outcome.actions else 0.0,
+        # Dispersion de la accion dentro del episodio. Es la medida de "no rota"
+        # que no depende de ningun baseline: una politica fija en 1.0 da 0, y una
+        # que alterna entre 0 y 1 la mitad del tiempo da 0.5. La rotacion
+        # anualizada mezcla eso con el crecimiento del equity y con el
+        # rebalanceo al peso objetivo, asi que sirve de evidencia y no de criterio.
+        action_std=float(np.std(outcome.actions)) if outcome.actions else 0.0,
         saturation=action_saturation(outcome.actions),
         clipped_actions=outcome.clipped_actions,
         n_round_trips=report.trades.n_round_trips,
@@ -351,6 +382,7 @@ _METRICAS = (
     "max_drawdown_mark",
     "turnover_annualized",
     "time_invested",
+    "action_std",
     "saturation",
     "n_round_trips",
     "win_rate",
@@ -767,7 +799,8 @@ def assemble_protocol(
     level_2: ArmResult | None = None,
     level_2_reference: ArmResult | None = None,
     level_3: Sequence[ArmResult] | None = None,
-    level_4: MultiPathResult | None = None,
+    level_4a: MultiPathResult | None = None,
+    level_4b: MultiPathResult | None = None,
 ) -> ProtocolReport:
     """Arma el reporte aplicando los criterios en orden y **parando al fallar**.
 
@@ -787,7 +820,8 @@ def assemble_protocol(
         (1, "senal con ruido (barrido de SNR)"),
         (2, "senal con costos"),
         (3, "cambio de regimen"),
-        (4, "control negativo (Heston)"),
+        (4, "4a control negativo puro (Heston)"),
+        (4, "4b drift detectable (Heston)"),
     )
 
     cero = evaluate_level_0(level_0, thresholds)
@@ -819,9 +853,22 @@ def assemble_protocol(
         return reporte
     reporte.levels.append(evaluate_level_3(level_3))
 
-    if level_4 is None:
+    if level_4a is None:
         return reporte
-    reporte.levels.append(evaluate_level_4(level_4, thresholds))
+    cuatro_a = evaluate_level_4a(level_4a, thresholds)
+    reporte.levels.append(cuatro_a)
+    if cuatro_a.verdict is Verdict.FAIL:
+        saltear(
+            4,
+            "4b drift detectable (Heston)",
+            "el nivel 4a fallo: el agente inventa senal donde no la hay, y medir "
+            "si reconoce drift real solo tendria sentido despues de entender eso",
+        )
+        return reporte
+
+    if level_4b is None:
+        return reporte
+    reporte.levels.append(evaluate_level_4b(level_4b, thresholds))
     return reporte
 
 
@@ -901,6 +948,7 @@ MULTIPATH_METRICS = (
     "log_growth",
     "total_return_mark",
     "time_invested",
+    "action_std",
     "turnover_annualized",
 )
 
@@ -968,33 +1016,36 @@ def run_multipath_arm(
     )
 
 
-def evaluate_level_4(
+def evaluate_level_4a(
     result: MultiPathResult, thresholds: ProtocolThresholds
 ) -> LevelResult:
-    """Control negativo, contrastado contra la dispersion **entre caminos**.
+    """Control negativo puro: **una sola hipotesis, un solo criterio**.
 
-    El criterio viejo comparaba la mediana del exceso contra un numero fijo, y
-    con eso declaro significativo un +0.164 sobre un camino cuyo baseline tiene
-    desvio 0.781 entre caminos. El criterio nuevo pregunta lo unico que se puede
-    preguntar sobre una serie sin senal: **¿el exceso se distingue de cero
-    cuando se lo mide contra el ruido del sorteo?**
+    ¿El agente inventa senal donde no la hay? Se contesta con lo unico que se
+    puede preguntar sobre una serie sin direccion predecible: si el exceso sobre
+    estar invertido se distingue de cero cuando se lo mide contra el ruido del
+    sorteo entre caminos.
 
-    El ``t`` del drift va en el reporte al lado del veredicto, no como nota al
-    pie: si el drift no es detectable en la ventana de entrenamiento, "converger
-    a estar invertido" le pide al agente aprender algo que la muestra no tiene, y
-    el resultado del nivel hay que leerlo con eso adelante.
+    **El tiempo invertido ya no entra en el veredicto.** Sobre este fixture el
+    drift no es detectable en la ventana de entrenamiento -``t`` poblacional
+    0.51- y abstenerse es una respuesta defendible, no un fallo: no hay en la
+    muestra nada que lleve al agente a invertirse. Exigir convergencia aqui
+    mezclaba esa hipotesis con la del control negativo y hacia que un solo
+    veredicto contestara dos preguntas. La segunda vive en el nivel 4b.
+
+    Se sigue reportando como evidencia: un nivel que no mide algo no es un nivel
+    que deba ocultarlo.
     """
     criterio = (
         f"sobre >= {thresholds.level_4_min_paths} caminos independientes, el "
         "exceso de crecimiento sobre estar siempre invertido NO se distingue de "
         "cero contrastado con la dispersion entre caminos (t de dos colas al "
-        f"95%), y el tiempo invertido mediano supera "
-        f"{thresholds.level_4_min_time_invested:.0%}"
+        "95%). Unico criterio del nivel"
     )
     if result.n_paths < thresholds.level_4_min_paths:
         return LevelResult(
             4,
-            "control negativo (Heston)",
+            "4a control negativo puro (Heston)",
             Verdict.FAIL,
             criterio,
             f"solo hay {result.n_paths} caminos y el criterio necesita "
@@ -1006,31 +1057,103 @@ def evaluate_level_4(
     exceso = result.decompositions["excess_log_growth_vs_always_long"]
     invertido = result.decompositions["time_invested"]
     t_drift = float(np.median(result.drift_t_by_path))
-
-    exceso_ok = not exceso.distinguishable_from_zero
-    invertido_ok = invertido.mean >= thresholds.level_4_min_time_invested
+    detectable = "DETECTABLE" if result.drift_detectable else "NO detectable"
+    ok = not exceso.distinguishable_from_zero
     hallazgo = (
-        f"exceso {exceso.render()}. Tiempo invertido medio entre caminos "
-        f"{invertido.mean:.2f} (sigma_mercado {invertido.between_path_std:.3f}). "
-        f"t del drift en entrenamiento: mediana {t_drift:+.2f}, "
-        f"{'DETECTABLE' if result.drift_detectable else 'NO detectable'} al 95%"
+        f"exceso {exceso.render()}. Evidencia que NO entra en el veredicto: "
+        f"tiempo invertido medio {invertido.mean:.2f}, t del drift en "
+        f"entrenamiento mediana {t_drift:+.2f} ({detectable} al 95%), asi que "
+        "abstenerse es defendible en este fixture"
     )
-    if not exceso_ok:
+    if not ok:
         hallazgo += (
             ". El exceso se distingue de cero incluso contra la dispersion "
             "entre caminos: el agente extrae algo de una serie sin senal y hay "
             "que entender que antes de seguir."
         )
+    return LevelResult(
+        4,
+        "4a control negativo puro (Heston)",
+        Verdict.PASS if ok else Verdict.FAIL,
+        criterio,
+        hallazgo,
+        result.arms,
+    )
+
+
+def evaluate_level_4b(
+    result: MultiPathResult, thresholds: ProtocolThresholds
+) -> LevelResult:
+    """¿Reconoce el agente un drift **cuando existe**?
+
+    Mismo proceso que el 4a salvo por ``mu``, calibrado para que el drift sea
+    detectable en la ventana de entrenamiento. Sigue sin haber senal
+    direccional, asi que el optimo es estar invertido y quedarse quieto.
+
+    El primer chequeo es **sobre el fixture**: si el ``t`` mediano del drift no
+    llega al umbral, el fixture no tiene lo que dice tener y el nivel no puede
+    medir lo que pretende. Eso es un fallo de calibracion, no del agente, y el
+    veredicto lo dice con esas palabras en vez de cargarselo al agente.
+    """
+    criterio = (
+        f"con el drift detectable en entrenamiento (t mediano >= "
+        f"{thresholds.level_4b_min_drift_t:.1f}), el agente converge a estar "
+        f"invertido (media entre caminos >= "
+        f"{thresholds.level_4b_min_time_invested:.0%}) y no rota (dispersion de "
+        f"la accion <= {thresholds.level_4b_max_action_std:.2f})"
+    )
+    if result.n_paths < thresholds.level_4_min_paths:
+        return LevelResult(
+            4,
+            "4b drift detectable (Heston)",
+            Verdict.FAIL,
+            criterio,
+            f"solo hay {result.n_paths} caminos y el criterio necesita "
+            f"{thresholds.level_4_min_paths}",
+            result.arms,
+        )
+
+    t_drift = float(np.median(result.drift_t_by_path))
+    invertido = result.decompositions["time_invested"]
+    dispersion = result.decompositions["action_std"]
+    rotacion = result.decompositions["turnover_annualized"]
+
+    if t_drift < thresholds.level_4b_min_drift_t:
+        return LevelResult(
+            4,
+            "4b drift detectable (Heston)",
+            Verdict.FAIL,
+            criterio,
+            f"el fixture no esta bien calibrado: t mediano del drift "
+            f"{t_drift:+.2f}, por debajo de {thresholds.level_4b_min_drift_t:.1f}. "
+            "Es un fallo de calibracion del fixture, no del agente: sin drift "
+            "detectable el nivel no puede medir lo que pretende medir",
+            result.arms,
+        )
+
+    invertido_ok = invertido.mean >= thresholds.level_4b_min_time_invested
+    quieto_ok = dispersion.mean <= thresholds.level_4b_max_action_std
+    hallazgo = (
+        f"t del drift mediana {t_drift:+.2f} (detectable). Tiempo invertido medio "
+        f"entre caminos {invertido.mean:.2f} (sigma_mercado "
+        f"{invertido.between_path_std:.3f}); dispersion de la accion media "
+        f"{dispersion.mean:.3f} (sigma_mercado {dispersion.between_path_std:.3f}); "
+        f"rotacion anualizada media {rotacion.mean:.1f}"
+    )
     if not invertido_ok:
         hallazgo += (
-            ". No converge a estar invertido. Si el drift no es detectable en "
-            "la ventana de entrenamiento, esto no es un fallo del agente: es "
-            "que no hay nada en la muestra que lo lleve ahi."
+            ". NO converge a estar invertido pese a que el drift si esta en la "
+            "muestra: el agente no reconoce un drift que podria medir."
+        )
+    if not quieto_ok:
+        hallazgo += (
+            ". Rota: la dispersion de la accion supera el umbral, asi que no se "
+            "queda quieto ni siquiera con el optimo a la vista."
         )
     return LevelResult(
         4,
-        "control negativo (Heston)",
-        Verdict.PASS if (exceso_ok and invertido_ok) else Verdict.FAIL,
+        "4b drift detectable (Heston)",
+        Verdict.PASS if (invertido_ok and quieto_ok) else Verdict.FAIL,
         criterio,
         hallazgo,
         result.arms,

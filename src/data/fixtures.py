@@ -60,7 +60,7 @@ import pandas as pd
 from data.errors import DataError
 from data.instruments import CommissionSchema, InstrumentSpec
 from data.schema import BarSeries, FloatArray
-from data.synthetic import RISK_REGIMES, generate_gbm_sv
+from data.synthetic import RISK_REGIMES, HestonParams, generate_gbm_sv
 
 StateArray = npt.NDArray[np.int8]
 
@@ -1519,6 +1519,41 @@ def level_3_regime_flip(
     )
 
 
+def log_drift_per_bar(mu: float, theta: float, bars_per_year: float) -> float:
+    """Drift **logaritmico** por barra de un proceso de Heston: ``(mu - theta/2)/bpy``.
+
+    El generador integra ``d log S = (mu - v_t/2) dt + ...``, asi que el drift de
+    los log-retornos **no** es ``mu*dt``. La diferencia no es cosmetica: con
+    ``mu=0.08`` y ``theta=0.09`` el aritmetico es 3.17e-4 por barra y el
+    logaritmico 1.39e-4, o sea menos de la mitad, y el estadistico ``t`` que
+    decide si el drift es detectable sale 1.16 contra 0.51.
+
+    Se usa el valor de largo plazo ``theta`` en lugar del ``v_t`` instantaneo: el
+    drift condicional varia con la volatilidad, y este es su valor poblacional.
+    """
+    return (mu - theta / 2.0) / bars_per_year
+
+
+def drift_t_population(
+    mu: float, theta: float, n_bars: int, bars_per_year: float = 252.0
+) -> float:
+    """``t`` poblacional del drift sobre ``n_bars``: cuan detectable es en esa muestra.
+
+    Sale de dividir el drift logaritmico por barra entre el error estandar de su
+    media::
+
+        t = (mu - theta/2) * sqrt(n) / sqrt(theta * bars_per_year)
+
+    Es la formula con la que se calibra el nivel 4b, y la que hay que mirar
+    **antes** de exigirle a un agente que aprenda un drift.
+    """
+    if n_bars < 2:
+        raise FixtureError("hacen falta al menos 2 barras")
+    if theta <= 0 or bars_per_year <= 0:
+        raise FixtureError("theta y bars_per_year deben ser positivos")
+    return (mu - theta / 2.0) * math.sqrt(n_bars) / math.sqrt(theta * bars_per_year)
+
+
 def level_4_control(
     n_bars: int = DEFAULT_N_BARS,
     *,
@@ -1555,13 +1590,82 @@ def level_4_control(
     senal = np.zeros(n_bars, dtype=np.float64)
     senal[1:] = np.log(close[1:] / close[:-1])
     spec = SignalSpec(
-        drift=params.mu / bars_per_year,
+        drift=log_drift_per_bar(params.mu, params.theta, bars_per_year),
         beta=0.0,
         sigma_target=math.sqrt(params.theta / bars_per_year),
     )
     return Fixture(
         level=4,
         name=f"level_4_control:{regime}",
+        series=serie,
+        spec=spec,
+        costs=ZERO_COSTS,
+        signal=senal,
+        seed=seed,
+    )
+
+
+# Drift anual del nivel 4b. Calibrado -no elegido- para que el drift sea
+# detectable en la ventana de entrenamiento: con theta=0.09 y 4800 barras de
+# train, `drift_t_population(0.42, 0.09, 4800)` da t = 5.46, y el t muestral se
+# distribuye alrededor de ese valor con desvio ~1, asi que P(t < 3) ~ 0.7%.
+#
+# **No es un drift realista**: 42% anual con 30% de volatilidad es un Sharpe
+# aritmetico de ~1.4 sostenido durante veinte anos. El fixture no pretende
+# parecerse a un mercado; pretende contestar una pregunta que el nivel 4a no
+# puede contestar, que es si el agente reconoce un drift **cuando existe**.
+LEVEL_4B_MU = 0.42
+
+
+def level_4b_detectable_drift(
+    n_bars: int = DEFAULT_N_BARS,
+    *,
+    seed: int,
+    mu: float = LEVEL_4B_MU,
+    bars_per_year: float = 252.0,
+) -> Fixture:
+    """Nivel 4b: Heston con drift **detectable**. Sigue sin senal direccional.
+
+    Identico al nivel 4a salvo por ``mu``. Que cambie una sola cosa es el punto:
+    si el agente se comporta distinto entre 4a y 4b, la unica explicacion
+    disponible es el drift.
+
+    El nivel 4a pregunta "¿el agente inventa senal donde no la hay?" y no puede
+    contestar "¿reconoce drift cuando lo hay?", porque en su fixture el drift no
+    es detectable en la muestra (t ~ 0.5). Exigirle ahi que converja a estar
+    invertido le pide aprender algo que la serie no contiene. Este nivel separa
+    esa segunda pregunta y la hace contestable.
+    """
+    base = RISK_REGIMES["medium"]
+    params = HestonParams(
+        mu=mu,
+        v0=base.v0,
+        theta=base.theta,
+        kappa=base.kappa,
+        xi=base.xi,
+        rho=base.rho,
+    )
+    serie = generate_gbm_sv(
+        n_bars,
+        seed=seed,
+        instrument=fixture_instrument("FIXT4B"),
+        params=params,
+        bars_per_year=bars_per_year,
+        overnight_gap_frac=0.0,
+        round_to_tick=False,
+    )
+    serie = replace(serie, source=f"fixture:level_4b:mu={mu}:seed={seed}")
+    close = np.asarray(serie.close, dtype=np.float64)
+    senal = np.zeros(n_bars, dtype=np.float64)
+    senal[1:] = np.log(close[1:] / close[:-1])
+    spec = SignalSpec(
+        drift=log_drift_per_bar(mu, params.theta, bars_per_year),
+        beta=0.0,
+        sigma_target=math.sqrt(params.theta / bars_per_year),
+    )
+    return Fixture(
+        level=4,
+        name=f"level_4b_detectable_drift:mu={mu}",
         series=serie,
         spec=spec,
         costs=ZERO_COSTS,
@@ -1577,4 +1681,5 @@ LEVELS: dict[str, Any] = {
     "level_2": level_2_costly,
     "level_3": level_3_regime_flip,
     "level_4": level_4_control,
+    "level_4b": level_4b_detectable_drift,
 }
