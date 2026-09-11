@@ -14,6 +14,12 @@ por eso estos archivos sí entran al repositorio.
   semillas**, con las dos varianzas separadas: `between_path_std` (mercado) y
   `within_path_std` (entrenamiento). Es la forma que exige el principio 5 de
   `CLAUDE.md` sobre fixtures sintéticos. Lleva además el `t` del drift por camino.
+
+  El nivel 4 tiene **dos**: `multipath_level_4.json` (4a, control negativo puro,
+  μ=0.08) y `multipath_level_4b.json` (drift detectable, μ=0.42). Son el mismo
+  proceso salvo por `mu`, y con la misma semilla comparten la realización del
+  ruido exactamente, así que el contraste entre ambos es **pareado**. Leerlos
+  por separado no alcanza: ver `docs/adr/0005`.
 - `arm_<etiqueta>.json` — un brazo: un fixture concreto entrenado y evaluado
   sobre las 10 semillas del estudio. Lleva la configuración completa del fixture
   y del agente, las distribuciones de cada métrica, los tres baselines, el techo
@@ -33,7 +39,8 @@ python -m agents.cli arm --level level_1 --beta -0.3 --out results
 # ... el resto de los brazos
 
 # El nivel 4 necesita caminos, no solo semillas: 10 x 10.
-python -m agents.cli multipath --level level_4 --paths 10 --seeds 10 --out results
+python -m agents.cli multipath --level level_4  --paths 10 --seeds 10 --out results
+python -m agents.cli multipath --level level_4b --paths 10 --seeds 10 --out results
 
 # Los criterios se aplican sobre lo guardado, sin reentrenar.
 python -m agents.cli assemble --out results
