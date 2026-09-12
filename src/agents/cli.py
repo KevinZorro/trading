@@ -39,6 +39,7 @@ from data.fixtures import (
     level_2_costly,
     level_3_regime_flip,
     level_4_control,
+    level_4b_detectable_drift,
 )
 
 # Semillas del estudio. Fijas y explicitas: un rango generado al vuelo hace que
@@ -72,6 +73,8 @@ def build_fixture_with_seed(
         return level_3_regime_flip(n_bars, seed=seed, beta=beta or -0.3)
     if level == "level_4":
         return level_4_control(n_bars, seed=seed)
+    if level == "level_4b":
+        return level_4b_detectable_drift(n_bars, seed=seed)
     raise SystemExit(f"nivel desconocido: {level}")
 
 
@@ -192,7 +195,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     referencia = brazos.get("level_1_beta-0.3")
     nivel_3 = buscar("level_3")
     multicamino = _load_multipath(carpeta)
-    nivel_4 = multicamino.get("level_4")
+    nivel_4a = multicamino.get("level_4")
+    nivel_4b = multicamino.get("level_4b")
 
     reporte = assemble_protocol(
         ProtocolThresholds(),
@@ -201,7 +205,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         level_2=nivel_2,
         level_2_reference=referencia,
         level_3=nivel_3 or None,
-        level_4=nivel_4,
+        level_4a=nivel_4a,
+        level_4b=nivel_4b,
     )
     registro = ExperimentLog(
         name="protocolo_agente_a",

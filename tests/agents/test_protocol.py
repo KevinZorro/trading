@@ -29,7 +29,9 @@ from agents.protocol import (
     evaluate_level_1,
     evaluate_level_2,
     evaluate_level_3,
-    evaluate_level_4,
+    evaluate_level_4_pair,
+    evaluate_level_4a,
+    evaluate_level_4b,
     run_arm,
 )
 from data.fixtures import level_0_deterministic, level_1_noisy
@@ -49,6 +51,7 @@ _METRICAS = (
     "max_drawdown_mark",
     "turnover_annualized",
     "time_invested",
+    "action_std",
     "saturation",
     "n_round_trips",
     "win_rate",
@@ -67,6 +70,7 @@ def corrida(seed: int, **campos: object) -> SeedRun:
         "max_drawdown_mark": 0.1,
         "turnover_annualized": 30.0,
         "time_invested": 0.5,
+        "action_std": 0.05,
         "saturation": 0.9,
         "clipped_actions": 0,
         "n_round_trips": 40,
@@ -251,6 +255,7 @@ def multicamino(
     *,
     excesos: list[float],
     invertido: float = 0.95,
+    dispersion_accion: float = 0.05,
     dispersion_semillas: float = 0.02,
     drift_t: float = 1.8,
 ) -> MultiPathResult:
@@ -268,6 +273,7 @@ def multicamino(
                 excess_log_growth_vs_always_long=exceso
                 + dispersion_semillas * ((i % 3) - 1),
                 time_invested=invertido,
+                action_std=dispersion_accion,
             )
             for i, s in enumerate(SEMILLAS)
         )
@@ -300,6 +306,7 @@ def multicamino(
                 "log_growth",
                 "total_return_mark",
                 "time_invested",
+                "action_std",
                 "turnover_annualized",
             )
         },
@@ -310,7 +317,7 @@ def multicamino(
 
 def test_nivel_4_aprueba_cuando_el_exceso_no_se_distingue_de_cero() -> None:
     """Excesos que cambian de signo entre caminos: es el sorteo, no el agente."""
-    resultado = evaluate_level_4(
+    resultado = evaluate_level_4a(
         multicamino(excesos=[0.4, -0.3, 0.2, -0.5, 0.1, -0.2, 0.3, -0.1, 0.0, 0.15]),
         UMBRALES,
     )
@@ -329,14 +336,14 @@ def test_el_hallazgo_que_motivo_el_cambio_de_criterio_ya_no_pasa_por_senal() -> 
     alrededor = [
         0.164 + d for d in (0.9, -1.1, 0.4, -0.7, 1.2, -0.5, 0.2, -0.9, 0.6, -0.3)
     ]
-    descomposicion = evaluate_level_4(multicamino(excesos=alrededor), UMBRALES)
+    descomposicion = evaluate_level_4a(multicamino(excesos=alrededor), UMBRALES)
     assert descomposicion.verdict is Verdict.PASS
     assert "NO distinguible de cero" in descomposicion.finding
 
 
 def test_nivel_4_falla_si_el_exceso_sobrevive_a_la_dispersion_entre_caminos() -> None:
     """Un exceso consistente en todos los caminos si es senal, y hay que entenderla."""
-    resultado = evaluate_level_4(
+    resultado = evaluate_level_4a(
         multicamino(
             excesos=[0.30, 0.32, 0.29, 0.31, 0.33, 0.28, 0.30, 0.34, 0.29, 0.31]
         ),
@@ -346,21 +353,125 @@ def test_nivel_4_falla_si_el_exceso_sobrevive_a_la_dispersion_entre_caminos() ->
     assert "extrae algo de una serie sin senal" in resultado.finding
 
 
-def test_nivel_4_falla_si_no_converge_a_estar_invertido() -> None:
-    resultado = evaluate_level_4(
+def test_el_nivel_4a_ya_no_juzga_el_tiempo_invertido() -> None:
+    """**La correccion que motivo partir el nivel.**
+
+    Sobre un fixture cuyo drift no es detectable (t poblacional 0.51),
+    abstenerse es defendible: no hay en la muestra nada que lleve al agente a
+    invertirse. Un tiempo invertido de 0.33 no puede hacer fallar el control
+    negativo, que pregunta otra cosa.
+
+    Se sigue reportando como evidencia, para que el nivel no oculte lo que no
+    juzga.
+    """
+    resultado = evaluate_level_4a(
         multicamino(
             excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05],
-            invertido=0.31,
+            invertido=0.33,
+        ),
+        UMBRALES,
+    )
+    assert resultado.verdict is Verdict.PASS
+    assert "0.33" in resultado.finding
+    assert "NO entra en el veredicto" in resultado.finding
+
+
+# ---------------------------------------------------------------------------
+# Nivel 4b: reconocer drift cuando existe
+# ---------------------------------------------------------------------------
+
+
+def test_nivel_4b_aprueba_si_converge_y_no_rota() -> None:
+    resultado = evaluate_level_4b(
+        multicamino(
+            label="level_4b",
+            excesos=[0.0] * 10,
+            invertido=0.96,
+            dispersion_accion=0.04,
+            drift_t=5.5,
+        ),
+        UMBRALES,
+    )
+    assert resultado.verdict is Verdict.PASS
+
+
+def test_nivel_4b_falla_si_no_reconoce_un_drift_que_si_puede_medir() -> None:
+    """Es la pregunta que el 4a no podia contestar.
+
+    Aca el drift esta en la muestra, asi que quedarse afuera ya no es
+    defendible: es no reconocer algo medible.
+    """
+    resultado = evaluate_level_4b(
+        multicamino(
+            label="level_4b",
+            excesos=[0.0] * 10,
+            invertido=0.33,
+            dispersion_accion=0.04,
+            drift_t=5.5,
         ),
         UMBRALES,
     )
     assert resultado.verdict is Verdict.FAIL
-    assert "No converge a estar invertido" in resultado.finding
+    assert "no reconoce un drift que podria medir" in resultado.finding
+
+
+def test_nivel_4b_falla_si_rota() -> None:
+    """Sin senal direccional, cambiar de opinion es puro costo."""
+    resultado = evaluate_level_4b(
+        multicamino(
+            label="level_4b",
+            excesos=[0.0] * 10,
+            invertido=0.90,
+            dispersion_accion=0.45,
+            drift_t=5.5,
+        ),
+        UMBRALES,
+    )
+    assert resultado.verdict is Verdict.FAIL
+    assert "Rota" in resultado.finding
+
+
+def test_nivel_4b_culpa_al_fixture_y_no_al_agente_si_el_drift_no_llega() -> None:
+    """Un fixture mal calibrado no puede medir lo que el nivel pretende.
+
+    El veredicto lo dice con esas palabras: cargarselo al agente seria reportar
+    un fallo de diseno como un fallo de aprendizaje.
+    """
+    resultado = evaluate_level_4b(
+        multicamino(
+            label="level_4b",
+            excesos=[0.0] * 10,
+            invertido=0.96,
+            dispersion_accion=0.04,
+            drift_t=1.2,
+        ),
+        UMBRALES,
+    )
+    assert resultado.verdict is Verdict.FAIL
+    assert "fallo de calibracion del fixture, no del agente" in resultado.finding
+
+
+def test_el_4b_se_saltea_si_el_4a_fallo() -> None:
+    """Medir si reconoce drift real solo tiene sentido si no inventa senal."""
+    reporte = assemble_protocol(
+        UMBRALES,
+        level_0=brazo("level_0", capture=0.95),
+        level_1=brazos_snr({0.25: 0.9, 0.09: 0.8, 0.04: 0.7, 0.01: 0.6}),
+        level_2=brazo("level_2", turnover_annualized=10.0),
+        level_2_reference=brazo("level_1", turnover_annualized=40.0),
+        level_3=[brazo("level_3")],
+        level_4a=multicamino(excesos=[0.30 + 0.01 * i for i in range(10)]),
+        level_4b=multicamino(label="level_4b", excesos=[0.0] * 10, drift_t=5.5),
+    )
+    veredictos = [(n.label, n.verdict) for n in reporte.levels]
+    assert veredictos[-2][1] is Verdict.FAIL
+    assert veredictos[-1][1] is Verdict.SKIPPED
+    assert "4b" in veredictos[-1][0]
 
 
 def test_nivel_4_exige_caminos_suficientes() -> None:
     """Con pocos caminos las dos varianzas no se separan, que es todo el punto."""
-    resultado = evaluate_level_4(multicamino(excesos=[0.1, -0.1, 0.2]), UMBRALES)
+    resultado = evaluate_level_4a(multicamino(excesos=[0.1, -0.1, 0.2]), UMBRALES)
     assert resultado.verdict is Verdict.FAIL
     assert "no se separan" in resultado.finding
 
@@ -371,14 +482,14 @@ def test_el_t_del_drift_va_al_lado_del_veredicto() -> None:
     El numero tiene que estar en el hallazgo, no en una nota al pie: sin el, un
     fallo del nivel se lee como un fallo del agente.
     """
-    no_detectable = evaluate_level_4(
+    no_detectable = evaluate_level_4a(
         multicamino(
             excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05], drift_t=1.8
         ),
         UMBRALES,
     )
     assert "NO detectable" in no_detectable.finding
-    detectable = evaluate_level_4(
+    detectable = evaluate_level_4a(
         multicamino(
             excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05], drift_t=4.0
         ),
@@ -414,7 +525,7 @@ def test_el_protocolo_para_en_el_nivel_0_y_saltea_el_resto() -> None:
         level_2=brazo("level_2", turnover_annualized=10.0),
         level_2_reference=brazo("level_1", turnover_annualized=40.0),
         level_3=[brazo("level_3")],
-        level_4=multicamino(excesos=[0.1] * 10),
+        level_4a=multicamino(excesos=[0.1] * 10),
     )
     assert reporte.stopped_at == 0
     veredictos = [n.verdict for n in reporte.levels]
@@ -427,7 +538,12 @@ def test_los_niveles_salteados_aparecen_en_el_reporte() -> None:
     """Un reporte con tres niveles y sin explicacion se lee como si el protocolo
     tuviera tres niveles."""
     reporte = assemble_protocol(UMBRALES, level_0=brazo("level_0", capture=0.1))
-    assert [n.level for n in reporte.levels] == [0, 1, 2, 3, 4]
+    # El 4 aparece dos veces: 4a y 4b son dos hipotesis del mismo nivel.
+    assert [n.level for n in reporte.levels] == [0, 1, 2, 3, 4, 4]
+    assert [n.label for n in reporte.levels][-2:] == [
+        "4a control negativo puro (Heston)",
+        "4b drift detectable (Heston)",
+    ]
     assert all("el nivel 0 fallo" in n.finding for n in reporte.levels[1:])
 
 
@@ -439,7 +555,7 @@ def test_el_protocolo_completo_no_reporta_parada() -> None:
         level_2=brazo("level_2", turnover_annualized=10.0),
         level_2_reference=brazo("level_1", turnover_annualized=40.0),
         level_3=[brazo("level_3")],
-        level_4=multicamino(
+        level_4a=multicamino(
             excesos=[0.1, -0.2, 0.3, -0.1, 0.0, 0.2, -0.3, 0.1, -0.1, 0.05]
         ),
     )
@@ -622,3 +738,146 @@ def test_el_nivel_3_distingue_memorizar_de_adaptarse() -> None:
     assert "memorizador: MEMORIZA" in resultado.finding
     assert "adaptado: SE ADAPTA" in resultado.finding
     assert "intermedio: se adapta parcialmente" in resultado.finding
+
+
+# ---------------------------------------------------------------------------
+# El par 4a <-> 4b
+#
+# El criterio que carga la evidencia. 4b por si solo no distingue "reconoce el
+# drift" de "compra por defecto": con mu=0.42 los dos comportamientos satisfacen
+# sus tres criterios.
+# ---------------------------------------------------------------------------
+
+
+def par(invertido_4a: float, invertido_4b: float, *, dispersion: float = 0.01) -> tuple:
+    """Dos multicaminos con las mismas semillas y tiempos invertidos dados."""
+    a = multicamino(
+        label="level_4",
+        excesos=[0.0] * 10,
+        invertido=invertido_4a,
+        drift_t=0.84,
+    )
+    b = multicamino(
+        label="level_4b",
+        excesos=[0.0] * 10,
+        invertido=invertido_4b,
+        drift_t=5.5,
+    )
+
+    # Dispersion entre caminos: sin ella el contraste pareado no tiene varianza.
+    def con_ruido(mp, base):  # type: ignore[no-untyped-def]
+        brazos = []
+        for k, arm in enumerate(mp.arms):
+            corridas = tuple(
+                corrida(c.seed, time_invested=base + dispersion * ((k % 5) - 2))
+                for c in arm.runs
+            )
+            brazos.append(
+                ArmResult(
+                    label=arm.label,
+                    fixture_name=arm.fixture_name,
+                    fixture_config=arm.fixture_config,
+                    ppo_config=arm.ppo_config,
+                    runs=corridas,
+                    distributions={
+                        m: summarize(m, SEMILLAS, [getattr(c, m) for c in corridas])
+                        for m in _METRICAS
+                    },
+                    ceiling=arm.ceiling,
+                    baselines=arm.baselines,
+                )
+            )
+        tupla = tuple(brazos)
+        return MultiPathResult(
+            label=mp.label,
+            path_seeds=mp.path_seeds,
+            agent_seeds=mp.agent_seeds,
+            arms=tupla,
+            decompositions={
+                m: decompose_variance(
+                    m, [[getattr(c, m) for c in x.runs] for x in tupla]
+                )
+                for m in (
+                    "excess_log_growth_vs_always_long",
+                    "log_growth",
+                    "total_return_mark",
+                    "time_invested",
+                    "action_std",
+                    "turnover_annualized",
+                )
+            },
+            drift_t_by_path=mp.drift_t_by_path,
+            ppo_config=mp.ppo_config,
+        )
+
+    return con_ruido(a, invertido_4a), con_ruido(b, invertido_4b)
+
+
+def test_el_par_detecta_que_el_agente_responde_al_drift() -> None:
+    a, b = par(0.33, 0.95)
+    resultado = evaluate_level_4_pair(a, b, UMBRALES)
+    assert resultado.verdict is Verdict.PASS
+    assert "SE INVIERTE MAS cuando el drift es detectable" in resultado.finding
+
+
+def test_el_par_revela_al_agente_que_compra_por_defecto() -> None:
+    """**El caso que 4b por si solo no puede distinguir.**
+
+    Un agente invertido al 95% en los dos fixtures pasa los tres criterios del
+    4b. Solo la diferencia contra el 4a muestra que no reconocio nada: se habria
+    invertido igual sin drift.
+    """
+    a, b = par(0.95, 0.95)
+    solo_4b = evaluate_level_4b(b, UMBRALES)
+    assert solo_4b.verdict is Verdict.PASS, "4b por si solo no lo distingue"
+
+    del_par = evaluate_level_4_pair(a, b, UMBRALES)
+    assert del_par.verdict is Verdict.FAIL
+    assert "comprando por defecto" in del_par.finding
+
+
+def test_el_par_detecta_el_sentido_equivocado() -> None:
+    """Invertirse MENOS con drift es un hallazgo distinto de no responder."""
+    a, b = par(0.95, 0.33)
+    resultado = evaluate_level_4_pair(a, b, UMBRALES)
+    assert resultado.verdict is Verdict.FAIL
+    assert "sentido equivocado" in resultado.finding
+
+
+def test_el_par_exige_las_mismas_semillas_de_camino() -> None:
+    """Parear caminos que no se corresponden da un numero sin interpretacion."""
+    a, b = par(0.33, 0.95)
+    desapareado = MultiPathResult(
+        label=b.label,
+        path_seeds=tuple(x + 1 for x in b.path_seeds),
+        agent_seeds=b.agent_seeds,
+        arms=b.arms,
+        decompositions=b.decompositions,
+        drift_t_by_path=b.drift_t_by_path,
+        ppo_config=b.ppo_config,
+    )
+    resultado = evaluate_level_4_pair(a, desapareado, UMBRALES)
+    assert resultado.verdict is Verdict.FAIL
+    assert "no comparten las semillas" in resultado.finding
+
+
+def test_el_par_aparece_al_final_del_protocolo() -> None:
+    """Leerlo despues de los veredictos individuales es lo que evita concluir
+    de 4b solo algo que 4b solo no puede decir."""
+    a, b = par(0.33, 0.95)
+    reporte = assemble_protocol(
+        UMBRALES,
+        level_0=brazo("level_0", capture=0.95),
+        level_1=brazos_snr({0.25: 0.9, 0.09: 0.8, 0.04: 0.7, 0.01: 0.6}),
+        level_2=brazo("level_2", turnover_annualized=10.0),
+        level_2_reference=brazo("level_1", turnover_annualized=40.0),
+        level_3=[brazo("level_3")],
+        level_4a=a,
+        level_4b=b,
+    )
+    etiquetas = [n.label for n in reporte.levels]
+    assert etiquetas[-3:] == [
+        "4a control negativo puro (Heston)",
+        "4b drift detectable (Heston)",
+        "4a<->4b el par",
+    ]

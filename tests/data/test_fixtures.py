@@ -28,12 +28,15 @@ from data.fixtures import (
     FixtureError,
     SignalSpec,
     calibrate_costs,
+    drift_t_population,
     generate_signal_bars,
     level_0_deterministic,
     level_1_noisy,
     level_2_costly,
     level_3_regime_flip,
     level_4_control,
+    level_4b_detectable_drift,
+    log_drift_per_bar,
 )
 from data.instruments import CommissionSchema
 from data.schema import FloatArray
@@ -155,8 +158,13 @@ def test_fixture_rechaza_una_serie_sin_etiqueta() -> None:
         )
 
 
-def test_registro_de_niveles_cubre_los_cinco() -> None:
-    assert sorted(LEVELS) == [f"level_{i}" for i in range(5)]
+def test_el_registro_cubre_los_cinco_niveles_y_el_4b() -> None:
+    """El 4b no es un sexto nivel: es la segunda mitad del 4, separada.
+
+    El 4a pregunta si el agente inventa senal donde no la hay; el 4b, si
+    reconoce drift cuando existe. Estaban mezcladas en un solo veredicto.
+    """
+    assert sorted(LEVELS) == [f"level_{i}" for i in range(5)] + ["level_4b"]
 
 
 # ---------------------------------------------------------------------------
@@ -463,3 +471,81 @@ def test_el_generador_rechaza_series_degeneradas() -> None:
         generate_signal_bars(2, spec=spec, seed=1)
     with pytest.raises(FixtureError, match="sub_steps debe ser"):
         generate_signal_bars(10, spec=spec, seed=1, sub_steps=1)
+
+
+# ---------------------------------------------------------------------------
+# Nivel 4b: drift detectable
+# ---------------------------------------------------------------------------
+
+
+def test_el_drift_logaritmico_no_es_el_aritmetico() -> None:
+    """Oraculo a mano: ``(mu - theta/2)/bpy``, no ``mu/bpy``.
+
+    La diferencia decide si el drift es detectable: con mu=0.08 y theta=0.09 el
+    aritmetico es mas del doble del logaritmico, y un ``t`` calculado con el
+    equivocado da 1.16 en vez de 0.51.
+    """
+    assert log_drift_per_bar(0.08, 0.09, 252.0) == pytest.approx((0.08 - 0.045) / 252)
+    assert log_drift_per_bar(0.08, 0.09, 252.0) < 0.08 / 252
+
+
+def test_el_t_poblacional_del_drift_tiene_la_forma_cerrada() -> None:
+    """``t = (mu - theta/2) * sqrt(n) / sqrt(theta * bpy)``, calculado a mano."""
+    mu, theta, n, bpy = 0.42, 0.09, 4_800, 252.0
+    esperado = (mu - theta / 2) * math.sqrt(n) / math.sqrt(theta * bpy)
+    assert drift_t_population(mu, theta, n, bpy) == pytest.approx(esperado, rel=1e-12)
+    assert drift_t_population(mu, theta, n, bpy) == pytest.approx(5.46, abs=0.01)
+    # El del nivel 4a, con el que se decidio que no era detectable.
+    assert drift_t_population(0.08, theta, n, bpy) == pytest.approx(0.51, abs=0.01)
+
+
+def test_el_t_crece_con_la_raiz_de_la_muestra() -> None:
+    cuadruple = drift_t_population(0.42, 0.09, 4 * 4_800)
+    simple = drift_t_population(0.42, 0.09, 4_800)
+    assert cuadruple == pytest.approx(2.0 * simple, rel=1e-12)
+
+
+def test_el_nivel_4b_tiene_drift_detectable_en_todos_sus_caminos() -> None:
+    """La calibracion se verifica sobre la muestra, no sobre la formula.
+
+    El umbral del nivel es ``t >= 3`` en la ventana de entrenamiento; si algun
+    camino no llegara, el fixture no tendria lo que dice tener.
+    """
+    from eval.distribution import drift_t_statistic
+
+    ts = []
+    for semilla in (701, 709, 719, 727, 733, 739, 743, 751, 757, 761):
+        train, _, _ = level_4b_detectable_drift(8_000, seed=semilla).split()
+        ts.append(drift_t_statistic(np.asarray(train.signal)[1:]))
+    assert min(ts) > 3.0
+    assert float(np.median(ts)) > 4.0
+
+
+def test_el_nivel_4b_difiere_del_4a_solo_en_el_drift() -> None:
+    """Una sola variable de diferencia.
+
+    Si el agente se comporta distinto entre 4a y 4b, la unica explicacion
+    disponible tiene que ser el drift. Cambiar tambien la volatilidad haria que
+    el contraste midiera dos cosas.
+    """
+    a = level_4_control(1_000, seed=SEED)
+    b = level_4b_detectable_drift(1_000, seed=SEED)
+    assert a.spec.sigma_target == pytest.approx(b.spec.sigma_target)
+    assert a.spec.beta == b.spec.beta == 0.0
+    assert b.spec.drift > a.spec.drift
+    assert b.series.source.startswith("fixture:level_4b:")
+
+
+def test_el_optimo_del_nivel_4b_sigue_siendo_estar_invertido() -> None:
+    """Mas drift no crea senal direccional: el techo no rota."""
+    _, validacion, _ = level_4b_detectable_drift(2_000, seed=SEED).split()
+    techos = validacion.ceilings(safety=0.98, first_decision=26)
+    np.testing.assert_array_equal(techos.informed, techos.always_long)
+    assert techos.capture(techos.informed) is None
+
+
+def test_el_t_poblacional_rechaza_parametros_imposibles() -> None:
+    with pytest.raises(FixtureError, match="al menos 2 barras"):
+        drift_t_population(0.4, 0.09, 1)
+    with pytest.raises(FixtureError, match="deben ser positivos"):
+        drift_t_population(0.4, 0.0, 100)
