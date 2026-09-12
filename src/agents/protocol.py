@@ -70,6 +70,12 @@ from sim.sizing import TargetWeightSizer
 class Verdict(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
+    # Se cumple una parte del criterio y no otra. Existe porque un agregado en
+    # verde sobre un componente en rojo es exactamente lo que este protocolo
+    # existe para evitar: el par 4a<->4b puede establecer que el agente responde
+    # al drift mientras el 4b establece que no lo explota, y las dos cosas son
+    # ciertas a la vez. Colapsarlas a PASS esconde la mitad mala.
+    PARTIAL = "PARTIAL"
     MEASURED = "MEASURED"
     SKIPPED = "SKIPPED"
 
@@ -1294,36 +1300,60 @@ def evaluate_level_4_pair(
         brecha.distinguishable_from_zero
         and brecha.mean > thresholds.level_4_pair_min_time_invested_gap
     )
+    # El par no puede dar verde si el 4b dio rojo. Reconocer el drift y
+    # explotarlo son dos cosas distintas, y las dos entran en el veredicto: si el
+    # agente responde pero no llega a los umbrales absolutos del 4b, eso es
+    # PARTIAL y no PASS. Un agregado en verde sobre un componente en rojo es
+    # justo lo que este protocolo existe para evitar.
+    invertido_4b = level_4b.decompositions["time_invested"].mean
+    dispersion_4b = level_4b.decompositions.get("action_std")
+    explota = bool(
+        invertido_4b >= thresholds.level_4b_min_time_invested
+        and dispersion_4b is not None
+        and dispersion_4b.mean <= thresholds.level_4b_max_action_std
+    )
     hallazgo = (
         f"metrica principal -> {brecha.render()}. "
         f"Exceso sobre estar invertido: {exceso.render()}. "
         f"t del drift: 4a mediana {float(np.median(level_4a.drift_t_by_path)):+.2f}, "
         f"4b mediana {float(np.median(level_4b.drift_t_by_path)):+.2f}"
     )
-    if responde:
+    if responde and explota:
+        veredicto = Verdict.PASS
         hallazgo += (
-            ". El agente SE INVIERTE MAS cuando el drift es detectable: responde "
-            "al drift en vez de comprar por defecto."
+            ". El agente SE INVIERTE MAS cuando el drift es detectable y alcanza "
+            "los umbrales absolutos del 4b: reconoce el drift y lo explota."
+        )
+    elif responde:
+        veredicto = Verdict.PARTIAL
+        hallazgo += (
+            ". RECONOCE el drift -se invierte mas cuando es detectable, y no "
+            "compra por defecto- pero NO LO EXPLOTA con la intensidad que el 4b "
+            f"exige: tiempo invertido {invertido_4b:.2f} contra "
+            f"{thresholds.level_4b_min_time_invested:.2f}"
+            + (
+                f", dispersion de la accion {dispersion_4b.mean:.3f} contra "
+                f"{thresholds.level_4b_max_action_std:.2f}"
+                if dispersion_4b is not None
+                else ""
+            )
+            + ". Las dos afirmaciones son ciertas a la vez y ninguna cancela a la "
+            "otra; por eso el veredicto es PARTIAL y no PASS."
         )
     elif brecha.distinguishable_from_zero:
+        veredicto = Verdict.FAIL
         hallazgo += (
             ". La diferencia se distingue de cero pero va en el sentido "
             "equivocado: el agente se invierte MENOS cuando hay drift."
         )
     else:
+        veredicto = Verdict.FAIL
         hallazgo += (
             ". El agente se comporta igual con drift y sin drift. Si ademas "
             "paso el 4b, lo paso comprando por defecto, no reconociendo el "
             "drift: el par es lo unico que lo revela."
         )
-    return LevelResult(
-        4,
-        "4a<->4b el par",
-        Verdict.PASS if responde else Verdict.FAIL,
-        criterio,
-        hallazgo,
-        (),
-    )
+    return LevelResult(4, "4a<->4b el par", veredicto, criterio, hallazgo, ())
 
 
 def evaluate_level_3_multipath(

@@ -750,7 +750,13 @@ def test_el_nivel_3_distingue_memorizar_de_adaptarse() -> None:
 # ---------------------------------------------------------------------------
 
 
-def par(invertido_4a: float, invertido_4b: float, *, dispersion: float = 0.01) -> tuple:
+def par(
+    invertido_4a: float,
+    invertido_4b: float,
+    *,
+    dispersion: float = 0.01,
+    dispersion_accion_4b: float = 0.05,
+) -> tuple:
     """Dos multicaminos con las mismas semillas y tiempos invertidos dados."""
     a = multicamino(
         label="level_4",
@@ -769,8 +775,13 @@ def par(invertido_4a: float, invertido_4b: float, *, dispersion: float = 0.01) -
     def con_ruido(mp, base):  # type: ignore[no-untyped-def]
         brazos = []
         for k, arm in enumerate(mp.arms):
+            accion = dispersion_accion_4b if mp.label == "level_4b" else 0.05
             corridas = tuple(
-                corrida(c.seed, time_invested=base + dispersion * ((k % 5) - 2))
+                corrida(
+                    c.seed,
+                    time_invested=base + dispersion * ((k % 5) - 2),
+                    action_std=accion,
+                )
                 for c in arm.runs
             )
             brazos.append(
@@ -819,6 +830,35 @@ def test_el_par_detecta_que_el_agente_responde_al_drift() -> None:
     resultado = evaluate_level_4_pair(a, b, UMBRALES)
     assert resultado.verdict is Verdict.PASS
     assert "SE INVIERTE MAS cuando el drift es detectable" in resultado.finding
+
+
+def test_el_par_es_parcial_si_responde_al_drift_pero_no_lo_explota() -> None:
+    """**El caso medido.** El agente se invierte mas cuando el drift es
+    detectable -+0.30 pareado- pero se queda en 0.63 contra los 0.80 que el 4b
+    exige. Las dos afirmaciones son ciertas a la vez: el par no puede dar verde
+    sobre un 4b en rojo, y tampoco rojo sobre una respuesta que si esta medida.
+    """
+    a, b = par(0.33, 0.63)
+    assert evaluate_level_4b(b, UMBRALES).verdict is Verdict.FAIL
+
+    resultado = evaluate_level_4_pair(a, b, UMBRALES)
+    assert resultado.verdict is Verdict.PARTIAL
+    assert "RECONOCE el drift" in resultado.finding
+    assert "NO LO EXPLOTA" in resultado.finding
+    # Las dos cifras, la que paso y la que no, en el mismo hallazgo.
+    assert "0.63" in resultado.finding
+    assert "0.80" in resultado.finding
+
+
+def test_el_par_es_parcial_si_la_politica_queda_dispersa() -> None:
+    """Invertirse lo suficiente pero sin fijar la posicion tampoco es explotar
+    el drift: rotar alrededor del 90% paga costos que el drift no compensa."""
+    a, b = par(0.33, 0.95, dispersion_accion_4b=0.40)
+    assert evaluate_level_4b(b, UMBRALES).verdict is Verdict.FAIL
+
+    resultado = evaluate_level_4_pair(a, b, UMBRALES)
+    assert resultado.verdict is Verdict.PARTIAL
+    assert "dispersion de la accion" in resultado.finding
 
 
 def test_el_par_revela_al_agente_que_compra_por_defecto() -> None:
