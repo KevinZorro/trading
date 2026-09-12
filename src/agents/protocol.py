@@ -157,9 +157,35 @@ class ProtocolThresholds:
         return dict(vars(self))
 
 
+#: Campos que pueden faltar en artefactos escritos por versiones anteriores.
+#: Cargarlos como ``None`` -y **no** como cero- es la unica lectura honesta: cero
+#: significa "el agente no movio la accion" y la ausencia significa "esta corrida
+#: es de antes de que se midiera". Confundirlos meteria observaciones inventadas
+#: en la distribucion. Mismo criterio que ``win_rate`` sin trades cerrados.
+CAMPOS_OPCIONALES: tuple[str, ...] = ("action_std",)
+
+
 @dataclass(frozen=True)
 class SeedRun:
-    """Resultado de una semilla sobre un fixture. Nunca se reporta solo."""
+    """Resultado de una semilla sobre un fixture. Nunca se reporta solo.
+
+    ``action_std`` es ``float | None`` porque los resultados guardados antes de
+    que existiera esa metrica siguen siendo validos para todo lo demas. Un
+    directorio de resultados es un registro historico: el codigo tiene que poder
+    leerlo y **decir que falta**, no reescribirlo ni rellenarlo.
+    """
+
+    @classmethod
+    def from_dict(cls, datos: dict[str, Any]) -> SeedRun:
+        """Reconstruye una corrida, admitiendo la ausencia de campos opcionales.
+
+        Falla con el nombre del campo si falta uno obligatorio: un resultado al
+        que le falta el retorno no es un resultado incompleto, es otra cosa.
+        """
+        completo = dict(datos)
+        for campo in CAMPOS_OPCIONALES:
+            completo.setdefault(campo, None)
+        return cls(**completo)
 
     seed: int
     capture: float | None
@@ -172,7 +198,7 @@ class SeedRun:
     max_drawdown_mark: float
     turnover_annualized: float
     time_invested: float
-    action_std: float
+    action_std: float | None
     saturation: float
     clipped_actions: int
     n_round_trips: int
@@ -222,7 +248,7 @@ class ArmResult:
 
     @classmethod
     def from_dict(cls, datos: dict[str, Any]) -> ArmResult:
-        corridas = tuple(SeedRun(**r) for r in datos["runs"])
+        corridas = tuple(SeedRun.from_dict(r) for r in datos["runs"])
         return cls(
             label=str(datos["label"]),
             fixture_name=str(datos["fixture"]["name"]),
@@ -973,9 +999,24 @@ MULTIPATH_METRICS = (
 
 
 def _descomponer(arms: tuple[ArmResult, ...]) -> dict[str, VarianceDecomposition]:
+    """Descompone las metricas que se puedan. Las que no, quedan afuera.
+
+    Una metrica que algun camino no define no se puede descomponer, y hay dos
+    formas legitimas de que eso pase: que no exista para ese fixture, o que el
+    resultado sea de una version anterior a esa metrica.
+
+    En los dos casos se saltea en vez de rellenarse. Inventarle un cero meteria
+    observaciones fabricadas en una distribucion que despues se usa para
+    contrastar hipotesis, que es el peor lugar posible para una invencion.
+
+    Quien necesite una metrica ausente tiene que decirlo: ``evaluate_level_4b``
+    falla con su motivo si falta ``action_std``, en vez de suponerla cero.
+    """
     salida: dict[str, VarianceDecomposition] = {}
     for metrica in MULTIPATH_METRICS:
         por_camino = [[getattr(c, metrica) for c in brazo.runs] for brazo in arms]
+        if any(all(v is None for v in camino) for camino in por_camino):
+            continue
         salida[metrica] = decompose_variance(metrica, por_camino)
     return salida
 
@@ -1134,8 +1175,20 @@ def evaluate_level_4b(
 
     t_drift = float(np.median(result.drift_t_by_path))
     invertido = result.decompositions["time_invested"]
-    dispersion = result.decompositions["action_std"]
     rotacion = result.decompositions["turnover_annualized"]
+    dispersion = result.decompositions.get("action_std")
+    if dispersion is None:
+        return LevelResult(
+            4,
+            "4b drift detectable (Heston)",
+            Verdict.FAIL,
+            criterio,
+            "este multicamino se produjo con una version que no registraba la "
+            "dispersion de la accion, asi que el criterio de 'no rota' no se "
+            "puede evaluar. Hay que re-correrlo: suponerla cero seria inventar "
+            "el resultado que el criterio busca",
+            result.arms,
+        )
 
     if t_drift < thresholds.level_4b_min_drift_t:
         return LevelResult(
@@ -1162,12 +1215,12 @@ def evaluate_level_4b(
     if not invertido_ok:
         hallazgo += (
             ". NO converge a estar invertido pese a que el drift si esta en la "
-            "muestra: el agente no reconoce un drift que podria medir."
+            "muestra: el agente no reconoce un drift que podria medir"
         )
     if not quieto_ok:
         hallazgo += (
             ". Rota: la dispersion de la accion supera el umbral, asi que no se "
-            "queda quieto ni siquiera con el optimo a la vista."
+            "queda quieto ni siquiera con el optimo a la vista"
         )
     return LevelResult(
         4,
