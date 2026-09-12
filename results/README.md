@@ -56,10 +56,11 @@ no datos de investigación (ver `docs/adr/0002`). En los niveles 0 y 1 la señal
 es una feature cruda de la observación: que el agente la aprenda valida el
 pipeline, no su capacidad de descubrir señal en un mercado.
 
-Los niveles 1, 2 y 3 siguen reportados con **N=1 camino**: describen varianza de
-entrenamiento, no de mercado. Solo el nivel 4 se re-corrió con N=10 caminos. El
-nivel 0 es determinista y su varianza de mercado es exactamente cero, así que N=1
-ahí es completo.
+Los niveles **3, 4a y 4b** están reportados con N=10 caminos × M=10 semillas. Los
+niveles **1 y 2 siguen con N=1 camino** y quedan como deuda documentada: sus
+conclusiones son robustas a la ruta y el cómputo de re-correrlos rinde más en la
+Etapa 6 (ver `docs/adr/0004`). El nivel 0 es determinista y su varianza de mercado
+es exactamente cero, así que N=1 ahí es completo.
 
 El paso 6 del protocolo —datos reales con walk-forward— no está corrido: no hay
 ningún dataset real versionado en el repositorio.

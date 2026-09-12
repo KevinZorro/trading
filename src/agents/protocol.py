@@ -1382,6 +1382,20 @@ def evaluate_level_3_multipath(
             f"{referencia_media:+.3f}; MEMORIZA en "
             f"{memorizadores}/{resultado.n_paths} caminos"
         )
+    # Con exactamente dos brazos -MLP y LSTM- se contrastan pareados. Comparten
+    # las semillas de camino, asi que cada par es el mismo mercado con dos
+    # arquitecturas y la varianza de mercado se cancela. Es la unica forma de
+    # decir "la memoria no ayuda" en vez de "las dos medias se parecen".
+    if len(results) == 2:
+        a, b = results
+        if a.path_seeds == b.path_seeds and "capture" in a.decompositions:
+            comparacion = paired_difference(
+                a.decompositions["capture"],
+                b.decompositions["capture"],
+                label_a=a.label,
+                label_b=b.label,
+            )
+            partes.append(f"comparacion pareada entre brazos -> {comparacion.render()}")
     return LevelResult(
         3,
         "cambio de regimen (N caminos)",

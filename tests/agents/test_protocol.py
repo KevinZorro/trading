@@ -991,3 +991,38 @@ def test_el_capture_indefinido_no_se_descompone() -> None:
     sin_capture = multicamino(excesos=[0.1, -0.2, 0.3, -0.1, 0.0] * 2)
     assert "capture" not in sin_capture.decompositions
     assert "time_invested" in sin_capture.decompositions
+
+
+def test_el_nivel_3_contrasta_las_dos_arquitecturas_pareadas() -> None:
+    """ "La memoria no ayuda" es una afirmacion pareada, no dos medias parecidas.
+
+    Los dos brazos comparten las semillas de camino, asi que cada par es el mismo
+    mercado con dos arquitecturas y la varianza de mercado se cancela.
+    """
+    dispersos = [-1.4, -1.2, -1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3]
+    resultado = evaluate_level_3_multipath(
+        [
+            multicamino_nivel_3("mlp", dispersos),
+            multicamino_nivel_3("lstm", dispersos),
+        ]
+    )
+    assert "comparacion pareada entre brazos" in resultado.finding
+    assert "NO distinguible de cero" in resultado.finding
+
+
+def test_sin_las_mismas_semillas_no_se_contrastan_las_arquitecturas() -> None:
+    """Parear caminos que no se corresponden daria un numero sin interpretacion."""
+    dispersos = [-1.4, -1.2, -1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3]
+    a = multicamino_nivel_3("mlp", dispersos)
+    b = multicamino_nivel_3("lstm", dispersos)
+    desapareado = MultiPathResult(
+        label=b.label,
+        path_seeds=tuple(x + 100 for x in b.path_seeds),
+        agent_seeds=b.agent_seeds,
+        arms=b.arms,
+        decompositions=b.decompositions,
+        drift_t_by_path=b.drift_t_by_path,
+        ppo_config=b.ppo_config,
+    )
+    resultado = evaluate_level_3_multipath([a, desapareado])
+    assert "comparacion pareada" not in resultado.finding

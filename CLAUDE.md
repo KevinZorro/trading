@@ -403,6 +403,13 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   los niveles 0, 1 y 2 el estado es completamente observable (el óptimo depende
   solo de `r_t`, que está en la observación) y la memoria solo agrega parámetros
   que sobreajustar. Donde importa es en el nivel 3.
+- **El nivel 3 está re-reportado con N=10 caminos y "memoriza" se sostiene en
+  los diez**, MLP y LSTM. La comparación pareada entre arquitecturas da una
+  diferencia de `capture` de −0.0001 con `t` = 0.00: la memoria no aporta nada
+  sobre ese fixture. **Los niveles 1 y 2 quedan como deuda documentada y no se
+  re-corren**: sus conclusiones son robustas a la ruta (una degradación monótona
+  de cuatro puntos con separación grande, y un contraste de comportamiento dentro
+  del mismo proceso), y las ~500 corridas rinden más en la Etapa 6. Ver ADR 0004.
 - **Walk-forward: los tests de ventanas consecutivas no se solapan** con el paso
   por defecto, y `coverage` reporta `overlapping_test_bars` cuando sí. Con tests
   solapados hay más observaciones que información independiente, y hay que
