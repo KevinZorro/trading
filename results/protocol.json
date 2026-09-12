@@ -1,6 +1,6 @@
 {
   "name": "protocolo_agente_a",
-  "created_at": "2026-09-12T02:08:40.371721000",
+  "created_at": "2026-09-12T03:19:59.010643000",
   "config": {
     "seeds": [
       11,
@@ -46,15 +46,7 @@
       "level_4_pair_min_time_invested_gap": 0.0
     }
   },
-  "provenance": {
-    "commit": "1a004931aaec9586ba17544da01f962326cdf54d",
-    "nota": "ningun dato real cargado ni mirado a esta fecha",
-    "torch": "2.14.0",
-    "timesteps_por_semilla": 60000,
-    "barras": 8000,
-    "caminos": 10,
-    "semillas": 10
-  },
+  "provenance": {},
   "results": {
     "protocol": {
       "thresholds": {
@@ -40116,9 +40108,9 @@
         {
           "level": 4,
           "label": "4a<->4b el par",
-          "verdict": "PASS",
+          "verdict": "PARTIAL",
           "statement": "la diferencia PAREADA de tiempo invertido entre 4b y 4a es positiva y se distingue de cero (t de dos colas al 95%). Es el criterio que separa 'reconoce el drift' de 'compra por defecto': 4b por si solo no puede",
-          "finding": "metrica principal -> time_invested: 4b (drift detectable) +0.6321 contra 4a (sin drift detectable) +0.3257  ->  diferencia pareada +0.3065 (sigma 0.0664, N=10 pares)  t=+14.58 contra 2.262  DISTINGUIBLE de cero. Exceso sobre estar invertido: excess_log_growth_vs_always_long: 4b -0.6541 contra 4a +0.1067  ->  diferencia pareada -0.7609 (sigma 0.3282, N=10 pares)  t=-7.33 contra 2.262  DISTINGUIBLE de cero. t del drift: 4a mediana +0.84, 4b mediana +5.77. El agente SE INVIERTE MAS cuando el drift es detectable: responde al drift en vez de comprar por defecto.",
+          "finding": "metrica principal -> time_invested: 4b (drift detectable) +0.6321 contra 4a (sin drift detectable) +0.3257  ->  diferencia pareada +0.3065 (sigma 0.0664, N=10 pares)  t=+14.58 contra 2.262  DISTINGUIBLE de cero. Exceso sobre estar invertido: excess_log_growth_vs_always_long: 4b -0.6541 contra 4a +0.1067  ->  diferencia pareada -0.7609 (sigma 0.3282, N=10 pares)  t=-7.33 contra 2.262  DISTINGUIBLE de cero. t del drift: 4a mediana +0.84, 4b mediana +5.77. RECONOCE el drift -se invierte mas cuando es detectable, y no compra por defecto- pero NO LO EXPLOTA con la intensidad que el 4b exige: tiempo invertido 0.63 contra 0.80, dispersion de la accion 0.383 contra 0.15. Las dos afirmaciones son ciertas a la vez y ninguna cancela a la otra; por eso el veredicto es PARTIAL y no PASS.",
           "arms": []
         }
       ]
