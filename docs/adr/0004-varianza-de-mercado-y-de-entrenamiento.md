@@ -154,13 +154,67 @@ agente memoriza" es una explicación demasiado cómoda para dejarla sin comprome
 de antemano. Esta predicción queda fechada, en el repositorio, y se contrasta
 tal como está escrita.
 
+## La predicción QUEDA FIRME — confirmada sobre 10 caminos el 2026-09-12
+
+**A esta fecha sigue sin haberse cargado ni mirado ningún dato real en este
+repositorio.** La confirmación es sobre fixtures sintéticos, que es donde
+correspondía verificarla.
+
+El nivel 3 se re-corrió con **10 caminos independientes × 10 semillas**, MLP y
+LSTM (Tarea E). El resultado:
+
+| Brazo | `capture` medio entre caminos | σ mercado | σ entrenamiento | Memoriza en |
+|---|---|---|---|---|
+| MLP | **−1.108** | 0.586 | 0.097 | **10/10 caminos** |
+| LSTM | **−1.108** | 0.521 | 0.096 | **10/10 caminos** |
+
+Memorizador de referencia: **−1.436**. El umbral de clasificación es la mitad del
+camino hacia esa referencia (−0.718), y los veinte brazos-camino quedan del lado
+del memorizador.
+
+**La premisa de la predicción no era un artefacto del camino que se había medido
+antes.** Se sostiene en los diez, con varianza de mercado 5 a 6 veces la de
+entrenamiento —otra confirmación de que el reporte de un solo camino describía la
+fuente de variación equivocada—.
+
+### La predicción subsidiaria 2 también queda confirmada, en fixture
+
+"La política recurrente no cerrará esa brecha materialmente." Contraste **pareado**
+entre arquitecturas sobre los mismos diez caminos:
+
+```
+capture:  LSTM −1.1084  contra  MLP −1.1084
+          diferencia pareada −0.0001 (sigma 0.1297, N=10)  t = −0.00  ->  NO distinguible de cero
+```
+
+No es "las dos medias se parecen": es cero, con un contraste que cancela la
+varianza de mercado dentro de cada par. La memoria no aporta nada sobre este
+fixture. Lo único distinguible entre arquitecturas es que la LSTM **rota un poco
+más** (dispersión de la acción +0.0176, `t` = 6.84), que va en contra de la
+memoria y no a favor.
+
+### Qué sigue en juego
+
+Las predicciones 1 y 3 son sobre **datos reales** y siguen sin contrastar:
+
+1. La ventana de test que cubre un giro pronunciado rinde peor que la mediana de
+   las ventanas, comparada contra los baselines de **esa** ventana.
+3. El agente estará invertido de más y rotará más justo después del giro.
+
+Se contrastan tal como están escritas, en la Tarea C.
+
 ## Lo que queda pendiente
 
-- **Los niveles 1, 2 y 3 siguen reportados con N=1 camino.** El cambio de regla
-  los alcanza y sus resultados actuales describen la varianza de entrenamiento,
-  no la de mercado. Re-reportarlos con N caminos cuesta del orden de 400 corridas
-  para el barrido de SNR solo; queda como trabajo explícito y no como algo
-  resuelto. El nivel 0 es la excepción: es determinista, su varianza de mercado
-  es exactamente cero y N=1 ahí es completo.
+- **El nivel 3 ya está re-reportado con N=10 caminos** (ver arriba). **Los
+  niveles 1 y 2 quedan como deuda documentada y no se van a re-correr.** Su
+  conclusión es robusta a la ruta: el nivel 1 mide una degradación *monótona* a
+  lo largo de un barrido de SNR —0.928 / 0.878 / 0.741 / 0.300 para R² de
+  25/9/4/1%—, y un ordenamiento de cuatro puntos con esa separación no se invierte
+  por haber tocado otro camino; el nivel 2 mide un cambio de comportamiento del
+  19.3% en la rotación entre dos fixtures que solo difieren en los costos, que es
+  un contraste dentro del mismo proceso. Re-correrlos costaría del orden de 500
+  corridas para confirmar conclusiones que no están en duda, y ese cómputo rinde
+  más en la Etapa 6. El nivel 0 es la excepción real: es determinista, su varianza
+  de mercado es exactamente cero y N=1 ahí es completo.
 - El nivel 4 sí se re-corrió con el criterio nuevo; el resultado está en
   `results/multipath_level_4.json`.

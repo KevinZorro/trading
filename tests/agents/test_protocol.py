@@ -29,6 +29,7 @@ from agents.protocol import (
     evaluate_level_1,
     evaluate_level_2,
     evaluate_level_3,
+    evaluate_level_3_multipath,
     evaluate_level_4_pair,
     evaluate_level_4a,
     evaluate_level_4b,
@@ -881,3 +882,147 @@ def test_el_par_aparece_al_final_del_protocolo() -> None:
         "4b drift detectable (Heston)",
         "4a<->4b el par",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Nivel 3 sobre N caminos
+#
+# El resultado del nivel 3 se usa como prediccion pre-registrada sobre datos
+# reales (ADR 0004). Una prediccion que descansa en un solo camino puede ser un
+# artefacto de ese camino, y entonces no es una prediccion sino una descripcion.
+# ---------------------------------------------------------------------------
+
+
+def multicamino_nivel_3(
+    label: str, capturas: list[float], memorizador: float = -1.0
+) -> MultiPathResult:
+    """Un nivel 3 multicamino con un ``capture`` por camino."""
+    brazos = []
+    for k, captura in enumerate(capturas):
+        corridas = tuple(corrida(s, capture=captura) for s in SEMILLAS)
+        base = brazo(f"{label}:path{k}")
+        brazos.append(
+            ArmResult(
+                label=base.label,
+                fixture_name=base.fixture_name,
+                fixture_config=base.fixture_config,
+                ppo_config=base.ppo_config,
+                runs=corridas,
+                distributions={
+                    m: summarize(m, SEMILLAS, [getattr(c, m) for c in corridas])
+                    for m in _METRICAS
+                },
+                ceiling={**base.ceiling, "memorizer_capture": memorizador},
+                baselines=base.baselines,
+            )
+        )
+    tupla = tuple(brazos)
+    return MultiPathResult(
+        label=label,
+        path_seeds=tuple(range(len(capturas))),
+        agent_seeds=tuple(SEMILLAS),
+        arms=tupla,
+        decompositions={
+            m: decompose_variance(m, [[getattr(c, m) for c in a.runs] for a in tupla])
+            for m in (
+                "capture",
+                "excess_log_growth_vs_always_long",
+                "log_growth",
+                "total_return_mark",
+                "time_invested",
+                "action_std",
+                "turnover_annualized",
+            )
+        },
+        drift_t_by_path=tuple([0.0] * len(capturas)),
+        ppo_config={"total_timesteps": 1},
+    )
+
+
+def test_el_nivel_3_cuenta_en_cuantos_caminos_se_sostiene_la_memorizacion() -> None:
+    """La media sola no distingue "memoriza en todos" de "memoriza en la mitad".
+
+    El conteo es lo que sostiene o retira una prediccion pre-registrada.
+    """
+    resultado = evaluate_level_3_multipath([multicamino_nivel_3("mlp", [-0.72] * 10)])
+    assert resultado.verdict is Verdict.MEASURED
+    assert "MEMORIZA en 10/10 caminos" in resultado.finding
+
+
+def test_un_hallazgo_que_no_se_sostiene_entre_caminos_queda_visible() -> None:
+    """Mitad memoriza, mitad se adapta: la media esconde exactamente eso."""
+    resultado = evaluate_level_3_multipath(
+        [multicamino_nivel_3("mlp", [-0.72] * 5 + [0.80] * 5)]
+    )
+    assert "MEMORIZA en 5/10 caminos" in resultado.finding
+
+
+def test_el_nivel_3_reporta_las_dos_varianzas() -> None:
+    resultado = evaluate_level_3_multipath(
+        [
+            multicamino_nivel_3(
+                "mlp", [-0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0.0]
+            )
+        ]
+    )
+    assert "sigma_mercado" in resultado.finding
+    assert "sigma_entrenamiento" in resultado.finding
+
+
+def test_el_multicamino_manda_sobre_el_camino_unico_en_el_nivel_3() -> None:
+    """Un solo camino no distingue una propiedad del agente de una del camino."""
+    reporte = assemble_protocol(
+        UMBRALES,
+        level_0=brazo("level_0", capture=0.95),
+        level_1=brazos_snr({0.25: 0.9, 0.09: 0.8, 0.04: 0.7, 0.01: 0.6}),
+        level_2=brazo("level_2", turnover_annualized=10.0),
+        level_2_reference=brazo("level_1", turnover_annualized=40.0),
+        level_3=[brazo("level_3")],
+        level_3_multipath=[multicamino_nivel_3("mlp", [-0.72] * 10)],
+    )
+    nivel_3 = next(n for n in reporte.levels if n.level == 3)
+    assert nivel_3.label == "cambio de regimen (N caminos)"
+    assert "10/10" in nivel_3.finding
+
+
+def test_el_capture_indefinido_no_se_descompone() -> None:
+    """En el nivel 4 ``capture`` es None: inventarle un cero seria el error que
+    ``Ceilings.capture`` evita devolviendo None."""
+    sin_capture = multicamino(excesos=[0.1, -0.2, 0.3, -0.1, 0.0] * 2)
+    assert "capture" not in sin_capture.decompositions
+    assert "time_invested" in sin_capture.decompositions
+
+
+def test_el_nivel_3_contrasta_las_dos_arquitecturas_pareadas() -> None:
+    """ "La memoria no ayuda" es una afirmacion pareada, no dos medias parecidas.
+
+    Los dos brazos comparten las semillas de camino, asi que cada par es el mismo
+    mercado con dos arquitecturas y la varianza de mercado se cancela.
+    """
+    dispersos = [-1.4, -1.2, -1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3]
+    resultado = evaluate_level_3_multipath(
+        [
+            multicamino_nivel_3("mlp", dispersos),
+            multicamino_nivel_3("lstm", dispersos),
+        ]
+    )
+    assert "comparacion pareada entre brazos" in resultado.finding
+    assert "NO distinguible de cero" in resultado.finding
+
+
+def test_sin_las_mismas_semillas_no_se_contrastan_las_arquitecturas() -> None:
+    """Parear caminos que no se corresponden daria un numero sin interpretacion."""
+    dispersos = [-1.4, -1.2, -1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3]
+    a = multicamino_nivel_3("mlp", dispersos)
+    b = multicamino_nivel_3("lstm", dispersos)
+    desapareado = MultiPathResult(
+        label=b.label,
+        path_seeds=tuple(x + 100 for x in b.path_seeds),
+        agent_seeds=b.agent_seeds,
+        arms=b.arms,
+        decompositions=b.decompositions,
+        drift_t_by_path=b.drift_t_by_path,
+        ppo_config=b.ppo_config,
+    )
+    resultado = evaluate_level_3_multipath([a, desapareado])
+    assert "comparacion pareada" not in resultado.finding

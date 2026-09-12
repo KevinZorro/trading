@@ -832,6 +832,7 @@ def assemble_protocol(
     level_2: ArmResult | None = None,
     level_2_reference: ArmResult | None = None,
     level_3: Sequence[ArmResult] | None = None,
+    level_3_multipath: Sequence[MultiPathResult] | None = None,
     level_4a: MultiPathResult | None = None,
     level_4b: MultiPathResult | None = None,
 ) -> ProtocolReport:
@@ -882,9 +883,15 @@ def assemble_protocol(
             saltear(nivel, etiqueta, "el nivel 2 fallo")
         return reporte
 
-    if level_3 is None:
+    # El multicamino manda cuando existe: un solo camino no distingue una
+    # propiedad del agente de una propiedad de ese camino, y el resultado del
+    # nivel 3 se usa como prediccion sobre datos reales.
+    if level_3_multipath is not None:
+        reporte.levels.append(evaluate_level_3_multipath(level_3_multipath))
+    elif level_3 is not None:
+        reporte.levels.append(evaluate_level_3(level_3))
+    else:
         return reporte
-    reporte.levels.append(evaluate_level_3(level_3))
 
     if level_4a is None:
         return reporte
@@ -981,6 +988,7 @@ class MultiPathResult:
 
 #: Metricas que se descomponen en varianza de mercado y de entrenamiento.
 MULTIPATH_METRICS = (
+    "capture",
     "excess_log_growth_vs_always_long",
     "log_growth",
     "total_return_mark",
@@ -1315,4 +1323,84 @@ def evaluate_level_4_pair(
         criterio,
         hallazgo,
         (),
+    )
+
+
+def evaluate_level_3_multipath(
+    results: Sequence[MultiPathResult],
+) -> LevelResult:
+    """Cambio de regimen sobre ``N`` caminos. **Se mide, no se aprueba.**
+
+    El veredicto sigue siendo ``MEASURED``: adaptarse y memorizar son dos
+    hallazgos validos. Lo que cambia respecto de la version de un solo camino es
+    que ahora se puede decir **si el hallazgo se sostiene entre caminos** o si
+    era una propiedad de aquel camino en particular.
+
+    Eso importa mas que de costumbre aca: el resultado del nivel 3 se uso como
+    prediccion pre-registrada sobre datos reales (ADR 0004). Una prediccion que
+    descansa en un solo camino puede ser un artefacto de ese camino, y entonces
+    no es una prediccion sino una descripcion.
+
+    Se reporta, por brazo: las dos varianzas de ``capture``, y **en cuantos de
+    los N caminos** el agente clasifica como memorizador contra la referencia
+    del memorizador de ese mismo camino. El conteo es lo que sostiene o retira
+    la prediccion; la media sola no distingue "memoriza en todos" de "memoriza
+    en la mitad y se adapta en la otra".
+    """
+    criterio = (
+        "sin criterio de aprobacion: se reporta si el agente se adapta o "
+        "memoriza, con las dos varianzas separadas y el conteo de caminos en "
+        "los que el hallazgo se sostiene"
+    )
+    partes: list[str] = []
+    brazos: list[ArmResult] = []
+    for resultado in results:
+        brazos.extend(resultado.arms)
+        captura = resultado.decompositions.get("capture")
+        memorizadores = 0
+        referencias: list[float] = []
+        for arm in resultado.arms:
+            mediana = arm.median("capture")
+            referencia = arm.ceiling.get("memorizer_capture")
+            if mediana is None or referencia is None:
+                continue
+            referencias.append(float(referencia))
+            # Memoriza si queda mas cerca del memorizador puro que de la mitad
+            # del camino hacia estar simplemente invertido.
+            if mediana < float(referencia) / 2.0:
+                memorizadores += 1
+        if captura is None:
+            partes.append(f"{resultado.label}: capture indefinido")
+            continue
+        referencia_media = float(np.mean(referencias)) if referencias else float("nan")
+        dentro = captura.within_path_std
+        entrenamiento = "n/a" if dentro is None else f"{dentro:.3f}"
+        partes.append(
+            f"{resultado.label}: capture medio entre caminos {captura.mean:+.3f} "
+            f"(sigma_mercado {captura.between_path_std:.3f}, "
+            f"sigma_entrenamiento {entrenamiento}), memorizador de referencia "
+            f"{referencia_media:+.3f}; MEMORIZA en "
+            f"{memorizadores}/{resultado.n_paths} caminos"
+        )
+    # Con exactamente dos brazos -MLP y LSTM- se contrastan pareados. Comparten
+    # las semillas de camino, asi que cada par es el mismo mercado con dos
+    # arquitecturas y la varianza de mercado se cancela. Es la unica forma de
+    # decir "la memoria no ayuda" en vez de "las dos medias se parecen".
+    if len(results) == 2:
+        a, b = results
+        if a.path_seeds == b.path_seeds and "capture" in a.decompositions:
+            comparacion = paired_difference(
+                a.decompositions["capture"],
+                b.decompositions["capture"],
+                label_a=a.label,
+                label_b=b.label,
+            )
+            partes.append(f"comparacion pareada entre brazos -> {comparacion.render()}")
+    return LevelResult(
+        3,
+        "cambio de regimen (N caminos)",
+        Verdict.MEASURED,
+        criterio,
+        "; ".join(partes),
+        tuple(brazos),
     )
