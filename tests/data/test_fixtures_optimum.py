@@ -489,6 +489,45 @@ def test_la_captura_normaliza_entre_estar_invertido_y_el_techo() -> None:
 # ---------------------------------------------------------------------------
 
 
+def capacidad(
+    fixture: Fixture,
+    initial_cash: float,
+    *,
+    safety: float = 0.98,
+    max_participation: float = 0.10,
+) -> dict[str, float | bool]:
+    """Participacion y nocional minimo que el techo informado exigiria al venue.
+
+    Vive en los tests y no en ``Fixture`` a proposito: es una verificacion de
+    que el techo esta bien calculado, no algo que el estudio consuma. Un techo
+    que la capacidad de la barra no permite alcanzar es un techo mal calculado,
+    porque el agente se quedaria corto por llenados parciales y el diagnostico
+    culparia al aprendizaje.
+    """
+    techos = fixture.ceilings(safety=safety, initial_cash=initial_cash)
+    close = np.asarray(fixture.series.close, dtype=np.float64)
+    volumen = np.asarray(fixture.series.volume, dtype=np.float64)
+    qty_objetivo = techos.informed_states.astype(np.float64) * safety * techos.informed
+    qty_objetivo = qty_objetivo / close
+    delta = np.abs(np.diff(np.concatenate([[0.0], qty_objetivo])))[1:]
+    participacion = delta / volumen[1:]
+    operadas = delta[delta > 0]
+    nocional_min = (
+        float((operadas * close[1:][delta > 0]).min()) if len(operadas) else 0.0
+    )
+    pico = float(participacion.max()) if len(participacion) else 0.0
+    return {
+        "peak_participation": pico,
+        "capacity_limit": max_participation,
+        "min_trade_notional": nocional_min,
+        "min_notional_required": fixture.series.instrument.min_notional,
+        "binds": bool(
+            pico > max_participation
+            or nocional_min < fixture.series.instrument.min_notional
+        ),
+    }
+
+
 def test_el_techo_es_alcanzable_dentro_del_venue() -> None:
     """Un techo que la capacidad de la barra no deja alcanzar esta mal calculado.
 
@@ -500,15 +539,15 @@ def test_el_techo_es_alcanzable_dentro_del_venue() -> None:
         level_1_noisy(600, seed=SEED),
         level_2_costly(600, seed=SEED),
     ):
-        reporte = fixture.capacity_check(CAPITAL)
+        reporte = capacidad(fixture, CAPITAL)
         assert reporte["binds"] is False, fixture.name
         assert float(reporte["peak_participation"]) < 0.01
 
 
-def test_capacity_check_detecta_que_el_capital_no_entra() -> None:
+def test_la_capacidad_detecta_que_el_capital_no_entra() -> None:
     """Con capital suficientemente grande, la barra deja de poder absorberlo."""
     fixture = level_1_noisy(600, seed=SEED)
-    reporte = fixture.capacity_check(1e12)
+    reporte = capacidad(fixture, 1e12)
     assert reporte["binds"] is True
 
 

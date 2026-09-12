@@ -12,7 +12,6 @@ from agents.experiment import ExperimentLog, ExperimentRecord, jsonable
 from agents.policy import (
     ConstantWeightPolicy,
     Policy,
-    RandomWeightPolicy,
     WarmupDelay,
 )
 from agents.protocol import (
@@ -50,7 +49,6 @@ __all__ = [
     "ProtocolReport",
     "ProtocolThresholds",
     "RandomAgent",
-    "RandomWeightPolicy",
     "SeedRun",
     "Verdict",
     "WarmupDelay",

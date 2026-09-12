@@ -8,14 +8,12 @@ comparacion sesgada por el calentamiento de los indicadores.
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from agents.baselines import BuyAndHold, MovingAverageCross
 from agents.policy import (
     ConstantWeightPolicy,
     Policy,
-    RandomWeightPolicy,
     WarmupDelay,
 )
 from agents.runner import (
@@ -42,20 +40,11 @@ def entorno(fixture, serie=None):  # type: ignore[no-untyped-def]
 
 def test_las_politicas_constantes_satisfacen_el_protocolo() -> None:
     assert isinstance(ConstantWeightPolicy(1.0), Policy)
-    assert isinstance(RandomWeightPolicy(seed=1), Policy)
 
 
 def test_un_peso_fuera_de_rango_se_rechaza_al_construir() -> None:
     with pytest.raises(ValueError, match="fuera de"):
         ConstantWeightPolicy(1.5)
-
-
-def test_la_politica_aleatoria_es_reproducible() -> None:
-    a, b = RandomWeightPolicy(seed=5), RandomWeightPolicy(seed=5)
-    obs = np.zeros(3)
-    assert [a.act(obs) for _ in range(5)] == [b.act(obs) for _ in range(5)]
-    a.reset()
-    assert a.act(obs) == b.reset() or True  # reset resiembra
 
 
 def test_un_episodio_recorre_la_serie_entera_y_devuelve_el_simresult() -> None:
