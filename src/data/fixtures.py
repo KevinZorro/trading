@@ -1172,43 +1172,6 @@ class Fixture:
 
     # -- capacidad ------------------------------------------------------
 
-    def capacity_check(
-        self,
-        initial_cash: float,
-        *,
-        safety: float = 0.98,
-        max_participation: float = 0.10,
-    ) -> dict[str, float | bool]:
-        """¿El venue deja alcanzar el techo con este capital?
-
-        Un techo que la capacidad de la barra no permite alcanzar es un techo
-        mal calculado: el agente se quedaria corto por llenados parciales y el
-        diagnostico de la Parte B culparia al aprendizaje.
-        """
-        techos = self.ceilings(safety=safety, initial_cash=initial_cash)
-        close = np.asarray(self.series.close, dtype=np.float64)
-        volumen = np.asarray(self.series.volume, dtype=np.float64)
-        equity = techos.informed
-        estados = techos.informed_states.astype(np.float64)
-        qty_objetivo = estados * safety * equity / close
-        delta = np.abs(np.diff(np.concatenate([[0.0], qty_objetivo])))
-        participacion = delta[1:] / volumen[1:]
-        operadas = delta[1:][delta[1:] > 0]
-        nocional_min = (
-            float((operadas * close[1:][delta[1:] > 0]).min()) if len(operadas) else 0.0
-        )
-        pico = float(participacion.max()) if len(participacion) else 0.0
-        return {
-            "peak_participation": pico,
-            "capacity_limit": max_participation,
-            "min_trade_notional": nocional_min,
-            "min_notional_required": self.series.instrument.min_notional,
-            "binds": bool(
-                pico > max_participation
-                or nocional_min < self.series.instrument.min_notional
-            ),
-        }
-
     # -- particion y serializacion ---------------------------------------
 
     def split(

@@ -194,6 +194,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     nivel_2 = brazos.get("level_2_beta-0.3") or brazos.get("level_2")
     referencia = brazos.get("level_1_beta-0.3")
     nivel_3 = buscar("level_3")
+    nivel_3_multicamino = [
+        v for k, v in _load_multipath(carpeta).items() if k.startswith("level_3")
+    ]
     multicamino = _load_multipath(carpeta)
     nivel_4a = multicamino.get("level_4")
     nivel_4b = multicamino.get("level_4b")
@@ -205,6 +208,7 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         level_2=nivel_2,
         level_2_reference=referencia,
         level_3=nivel_3 or None,
+        level_3_multipath=nivel_3_multicamino or None,
         level_4a=nivel_4a,
         level_4b=nivel_4b,
     )

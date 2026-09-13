@@ -18,8 +18,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-import numpy as np
-
 from data.schema import FloatArray
 from sim.engine import LONG_ONLY_ACTION_RANGE, Strategy
 from sim.orders import MarketOrder
@@ -75,32 +73,6 @@ class ConstantWeightPolicy:
 
     def describe(self) -> dict[str, object]:
         return {"policy": "constant_weight", "weight": self.weight}
-
-
-class RandomWeightPolicy:
-    """Peso uniforme en ``[0, 1]`` con semilla propia.
-
-    Separa "el agente aprendio algo" de "el entorno tiene un sesgo": una
-    politica aleatoria sobre un activo con drift positivo gana plata, y sin este
-    punto de comparacion ese retorno se le atribuiria al aprendizaje.
-    """
-
-    def __init__(self, *, seed: int = 0) -> None:
-        self.seed = seed
-        self._rng = np.random.default_rng(seed)
-
-    @property
-    def name(self) -> str:
-        return "random_weight"
-
-    def reset(self, seed: int | None = None) -> None:
-        self._rng = np.random.default_rng(self.seed if seed is None else seed)
-
-    def act(self, observation: FloatArray) -> float:
-        return float(self._rng.uniform(*LONG_ONLY_ACTION_RANGE))
-
-    def describe(self) -> dict[str, object]:
-        return {"policy": "random_weight", "seed": self.seed}
 
 
 class WarmupDelay:

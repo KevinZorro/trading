@@ -192,7 +192,7 @@ Los criterios de arriba se commitearon antes de ejecutar nada: `13b0ae1` para
 |---|---|---|
 | **4a** control negativo puro | ✅ PASS | exceso `t = +0.69` contra 2.262 → **no distinguible de cero** |
 | **4b** drift detectable | ❌ FAIL | `t` del drift +5.77; tiempo invertido **0.63** (< 0.80); dispersión de la acción **0.383** (> 0.15) |
-| **par 4a↔4b** | ✅ PASS | diferencia pareada de tiempo invertido **+0.3065**, `t = +14.58` |
+| **par 4a↔4b** | ⚠️ PARTIAL | diferencia pareada de tiempo invertido **+0.3065**, `t = +14.58` → reconoce; pero 4b en rojo → no explota |
 
 ### Lo que dice el par, y que ninguno de los dos niveles dice solo
 
@@ -214,6 +214,119 @@ produce.
 
 **4b no se relaja por esto.** Falla, y falla por los dos criterios. Que el par
 explique *qué* clase de fallo es no lo convierte en un pase.
+
+### Por qué el par es PARTIAL y no PASS
+
+El veredicto del par estuvo en PASS en la primera versión de este ADR, porque su
+criterio registrado —la diferencia pareada— se cumple. Eso era un agregado en
+verde sobre un componente en rojo, que es exactamente lo que este protocolo
+existe para evitar: quien leyera la línea del par sin leer la de 4b se llevaría
+"el nivel 4 pasó".
+
+Corregido: `Verdict.PARTIAL`. El par evalúa ahora las dos cosas por separado y
+las reporta juntas.
+
+- `responde` = la diferencia pareada es positiva y se distingue de cero. **Se
+  cumple** (+0.3065, `t = +14.58`).
+- `explota` = los umbrales absolutos de 4b (tiempo invertido ≥ 0.80 y dispersión
+  ≤ 0.15). **No se cumple** (0.63 y 0.383).
+
+`responde and explota` → PASS. `responde` sin `explota` → **PARTIAL**, con las
+dos cifras y sus dos umbrales en el hallazgo. Nada de esto cambia el criterio de
+4b ni el de 4a: PARTIAL es una etiqueta nueva para un estado que antes se
+colapsaba a PASS, no un umbral relajado.
+
+## Diagnóstico: por qué 4b no converge
+
+Tres hipótesis distinguibles con los datos ya producidos. Script en
+`scratchpad`, no versionado: es diagnóstico, no infraestructura.
+
+### (b) ¿el reward es casi indiferente entre 0.8 y 1.0? — **NO**
+
+Pesos constantes sobre la ventana de validación de 4b (camino 701):
+
+| peso | retorno total | reward/barra |
+|---|---|---|
+| 0.60 | +1.382 | +0.06248 |
+| 0.63 | +1.473 | +0.06560 |
+| 0.80 | +2.023 | +0.08331 |
+| 0.90 | +2.373 | +0.09372 |
+| 1.00 | +2.738 | +0.10413 |
+
+Monótono y con pendiente estable: pasar de 0.8 a 1.0 vale **+0.0341 de reward
+por barra**, con `t = 6.58` sobre las 4799 barras de entrenamiento y `t = 23.27`
+sobre los 60 000 timesteps que el agente efectivamente ve. La señal de gradiente
+está ahí y es grande. Hipótesis **descartada**.
+
+### (a) ¿la entropía mantiene la política estocástica? — **no por `ent_coef`**
+
+`ent_coef = 0.0`: no hay bonus de entropía, así que la hipótesis tal como estaba
+formulada no aplica. Pero el mecanismo que describe sí está presente en otra
+forma: el `log_std` **aprendido** de la gaussiana de SB3 arranca en 0.0
+(σ = 1.00) y después de 60 000 timesteps está en −0.095, o sea **σ = 0.909**. Se
+encogió un 9%. Con σ ≈ 0.9 sobre un espacio de acción de ancho 1, la acción
+muestreada durante el entrenamiento es casi independiente de la media, así que la
+ventaja que PPO atribuye a la media llega enterrada en ruido y el gradiente de la
+media queda mal identificado.
+
+Aclaración que evita una lectura errónea: **la evaluación es determinista** (usa
+la media, no muestrea), así que la dispersión medida de 0.383 en 4b **no** es ese
+ruido de muestreo. Es la media misma moviéndose con el estado. Y su forma
+importa: los percentiles de la acción en validación son
+`[0.00, 0.33, 0.90, 1.00, 1.00]`. El agente no está "invertido al 63% siempre";
+está **plano en algunas barras y all-in en otras**. Eso es una política sin
+converger, no una política convergida a una asignación parcial.
+
+### (c) ¿alcanzan 4800 barras / 60 000 timesteps? — **es la causa operativa**
+
+Mismo fixture, mismo camino, misma semilla, solo más presupuesto:
+
+| timesteps | tiempo invertido | dispersión | σ de la política |
+|---|---|---|---|
+| 60 000 | 0.673 | 0.392 | 0.909 |
+| 240 000 | **0.777** | 0.366 | 0.651 |
+
+Las tres métricas se mueven monótonamente hacia donde el criterio las quiere, y
+el tiempo invertido llega a 0.777, al borde del umbral de 0.80. **El presupuesto
+de optimización es la causa operativa**, y el `log_std` que se encoge despacio es
+el mecanismo por el que se agota.
+
+### Veredicto del diagnóstico
+
+**Es (c), con el mecanismo de (a) en su forma de `log_std` aprendido y no de
+`ent_coef`.** Es decir: **un hiperparámetro y un presupuesto, no un hallazgo
+sobre la capacidad de aprender.** El drift está en la muestra (`t` = 5.77), el
+reward lo premia con `t` = 23 y el agente se mueve en la dirección correcta
+cuando se le da cuádruple presupuesto.
+
+Límite honesto de este diagnóstico: (a) y (c) son **una sola corrida** (camino
+701, semilla 11). No es una distribución sobre 10 caminos × 10 semillas como los
+veredictos. Alcanza para descartar (b) —que es aritmética sobre el fixture, no
+una corrida— y para señalar la dirección de (a) y (c); no alcanza para poner un
+número sobre cuántos timesteps harían falta.
+
+### Consecuencia para la Etapa 5, que es por lo que hay que saberlo ahora
+
+Una política que a 60 000 timesteps todavía tiene σ = 0.91 y una media que oscila
+entre 0 y 1 **no está en su óptimo**. Comparar el Agente A contra el Agente B en
+ese estado mide la diferencia entre dos políticas a medio entrenar, y la varianza
+de entrenamiento —que en 4a ya medimos en 0.197 contra 0.490 de mercado— se come
+cualquier efecto de las noticias antes de que se pueda ver.
+
+Lo que hay que hacer antes de la Etapa 5, y queda anotado como deuda:
+
+1. Fijar el presupuesto de timesteps con una curva de convergencia, no por
+   defecto.
+2. Revisar `log_std_init` y considerar un `log_std` programado, para que la
+   exploración se apague.
+3. Verificar que el presupuesto elegido deja el σ de la política estable, y
+   reportarlo junto a la comparación A vs B.
+
+**Nada de esto se aplica retroactivamente a 4b.** Su criterio queda como está y
+su veredicto sigue siendo FAIL. Cambiar los hiperparámetros y volver a correr
+para que pase sería exactamente el ajuste que el protocolo prohíbe. Lo que
+cambia, cuando se cambie, es el presupuesto de todo el estudio, y entonces se
+re-corre el protocolo completo, no solo el nivel que falló.
 
 ### Consecuencia para los datos reales
 

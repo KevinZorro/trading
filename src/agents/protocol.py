@@ -70,6 +70,12 @@ from sim.sizing import TargetWeightSizer
 class Verdict(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
+    # Se cumple una parte del criterio y no otra. Existe porque un agregado en
+    # verde sobre un componente en rojo es exactamente lo que este protocolo
+    # existe para evitar: el par 4a<->4b puede establecer que el agente responde
+    # al drift mientras el 4b establece que no lo explota, y las dos cosas son
+    # ciertas a la vez. Colapsarlas a PASS esconde la mitad mala.
+    PARTIAL = "PARTIAL"
     MEASURED = "MEASURED"
     SKIPPED = "SKIPPED"
 
@@ -832,6 +838,7 @@ def assemble_protocol(
     level_2: ArmResult | None = None,
     level_2_reference: ArmResult | None = None,
     level_3: Sequence[ArmResult] | None = None,
+    level_3_multipath: Sequence[MultiPathResult] | None = None,
     level_4a: MultiPathResult | None = None,
     level_4b: MultiPathResult | None = None,
 ) -> ProtocolReport:
@@ -882,9 +889,15 @@ def assemble_protocol(
             saltear(nivel, etiqueta, "el nivel 2 fallo")
         return reporte
 
-    if level_3 is None:
+    # El multicamino manda cuando existe: un solo camino no distingue una
+    # propiedad del agente de una propiedad de ese camino, y el resultado del
+    # nivel 3 se usa como prediccion sobre datos reales.
+    if level_3_multipath is not None:
+        reporte.levels.append(evaluate_level_3_multipath(level_3_multipath))
+    elif level_3 is not None:
+        reporte.levels.append(evaluate_level_3(level_3))
+    else:
         return reporte
-    reporte.levels.append(evaluate_level_3(level_3))
 
     if level_4a is None:
         return reporte
@@ -981,6 +994,7 @@ class MultiPathResult:
 
 #: Metricas que se descomponen en varianza de mercado y de entrenamiento.
 MULTIPATH_METRICS = (
+    "capture",
     "excess_log_growth_vs_always_long",
     "log_growth",
     "total_return_mark",
@@ -1286,33 +1300,137 @@ def evaluate_level_4_pair(
         brecha.distinguishable_from_zero
         and brecha.mean > thresholds.level_4_pair_min_time_invested_gap
     )
+    # El par no puede dar verde si el 4b dio rojo. Reconocer el drift y
+    # explotarlo son dos cosas distintas, y las dos entran en el veredicto: si el
+    # agente responde pero no llega a los umbrales absolutos del 4b, eso es
+    # PARTIAL y no PASS. Un agregado en verde sobre un componente en rojo es
+    # justo lo que este protocolo existe para evitar.
+    invertido_4b = level_4b.decompositions["time_invested"].mean
+    dispersion_4b = level_4b.decompositions.get("action_std")
+    explota = bool(
+        invertido_4b >= thresholds.level_4b_min_time_invested
+        and dispersion_4b is not None
+        and dispersion_4b.mean <= thresholds.level_4b_max_action_std
+    )
     hallazgo = (
         f"metrica principal -> {brecha.render()}. "
         f"Exceso sobre estar invertido: {exceso.render()}. "
         f"t del drift: 4a mediana {float(np.median(level_4a.drift_t_by_path)):+.2f}, "
         f"4b mediana {float(np.median(level_4b.drift_t_by_path)):+.2f}"
     )
-    if responde:
+    if responde and explota:
+        veredicto = Verdict.PASS
         hallazgo += (
-            ". El agente SE INVIERTE MAS cuando el drift es detectable: responde "
-            "al drift en vez de comprar por defecto."
+            ". El agente SE INVIERTE MAS cuando el drift es detectable y alcanza "
+            "los umbrales absolutos del 4b: reconoce el drift y lo explota."
+        )
+    elif responde:
+        veredicto = Verdict.PARTIAL
+        hallazgo += (
+            ". RECONOCE el drift -se invierte mas cuando es detectable, y no "
+            "compra por defecto- pero NO LO EXPLOTA con la intensidad que el 4b "
+            f"exige: tiempo invertido {invertido_4b:.2f} contra "
+            f"{thresholds.level_4b_min_time_invested:.2f}"
+            + (
+                f", dispersion de la accion {dispersion_4b.mean:.3f} contra "
+                f"{thresholds.level_4b_max_action_std:.2f}"
+                if dispersion_4b is not None
+                else ""
+            )
+            + ". Las dos afirmaciones son ciertas a la vez y ninguna cancela a la "
+            "otra; por eso el veredicto es PARTIAL y no PASS."
         )
     elif brecha.distinguishable_from_zero:
+        veredicto = Verdict.FAIL
         hallazgo += (
             ". La diferencia se distingue de cero pero va en el sentido "
             "equivocado: el agente se invierte MENOS cuando hay drift."
         )
     else:
+        veredicto = Verdict.FAIL
         hallazgo += (
             ". El agente se comporta igual con drift y sin drift. Si ademas "
             "paso el 4b, lo paso comprando por defecto, no reconociendo el "
             "drift: el par es lo unico que lo revela."
         )
+    return LevelResult(4, "4a<->4b el par", veredicto, criterio, hallazgo, ())
+
+
+def evaluate_level_3_multipath(
+    results: Sequence[MultiPathResult],
+) -> LevelResult:
+    """Cambio de regimen sobre ``N`` caminos. **Se mide, no se aprueba.**
+
+    El veredicto sigue siendo ``MEASURED``: adaptarse y memorizar son dos
+    hallazgos validos. Lo que cambia respecto de la version de un solo camino es
+    que ahora se puede decir **si el hallazgo se sostiene entre caminos** o si
+    era una propiedad de aquel camino en particular.
+
+    Eso importa mas que de costumbre aca: el resultado del nivel 3 se uso como
+    prediccion pre-registrada sobre datos reales (ADR 0004). Una prediccion que
+    descansa en un solo camino puede ser un artefacto de ese camino, y entonces
+    no es una prediccion sino una descripcion.
+
+    Se reporta, por brazo: las dos varianzas de ``capture``, y **en cuantos de
+    los N caminos** el agente clasifica como memorizador contra la referencia
+    del memorizador de ese mismo camino. El conteo es lo que sostiene o retira
+    la prediccion; la media sola no distingue "memoriza en todos" de "memoriza
+    en la mitad y se adapta en la otra".
+    """
+    criterio = (
+        "sin criterio de aprobacion: se reporta si el agente se adapta o "
+        "memoriza, con las dos varianzas separadas y el conteo de caminos en "
+        "los que el hallazgo se sostiene"
+    )
+    partes: list[str] = []
+    brazos: list[ArmResult] = []
+    for resultado in results:
+        brazos.extend(resultado.arms)
+        captura = resultado.decompositions.get("capture")
+        memorizadores = 0
+        referencias: list[float] = []
+        for arm in resultado.arms:
+            mediana = arm.median("capture")
+            referencia = arm.ceiling.get("memorizer_capture")
+            if mediana is None or referencia is None:
+                continue
+            referencias.append(float(referencia))
+            # Memoriza si queda mas cerca del memorizador puro que de la mitad
+            # del camino hacia estar simplemente invertido.
+            if mediana < float(referencia) / 2.0:
+                memorizadores += 1
+        if captura is None:
+            partes.append(f"{resultado.label}: capture indefinido")
+            continue
+        referencia_media = float(np.mean(referencias)) if referencias else float("nan")
+        dentro = captura.within_path_std
+        entrenamiento = "n/a" if dentro is None else f"{dentro:.3f}"
+        partes.append(
+            f"{resultado.label}: capture medio entre caminos {captura.mean:+.3f} "
+            f"(sigma_mercado {captura.between_path_std:.3f}, "
+            f"sigma_entrenamiento {entrenamiento}), memorizador de referencia "
+            f"{referencia_media:+.3f}; MEMORIZA en "
+            f"{memorizadores}/{resultado.n_paths} caminos"
+        )
+    # Con exactamente dos brazos -MLP y LSTM- se contrastan pareados. Comparten
+    # las semillas de camino, asi que cada par es el mismo mercado con dos
+    # arquitecturas y la varianza de mercado se cancela. Es la unica forma de
+    # decir "la memoria no ayuda" en vez de "las dos medias se parecen".
+    if len(results) == 2:
+        a, b = results
+        if a.path_seeds == b.path_seeds and "capture" in a.decompositions:
+            comparacion = paired_difference(
+                a.decompositions["capture"],
+                b.decompositions["capture"],
+                label_a=a.label,
+                label_b=b.label,
+            )
+            partes.append(f"comparacion pareada entre brazos -> {comparacion.render()}")
     return LevelResult(
-        4,
-        "4a<->4b el par",
-        Verdict.PASS if responde else Verdict.FAIL,
+        3,
+        "cambio de regimen (N caminos)",
+        Verdict.MEASURED,
         criterio,
-        hallazgo,
-        (),
+        "; ".join(partes),
+        tuple(brazos),
     )
