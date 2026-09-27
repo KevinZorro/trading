@@ -13,6 +13,7 @@ import pandas as pd
 from data.calendars import Calendar
 from data.errors import SchemaError
 from data.instruments import InstrumentSpec
+from data.manifest import verify_manifest
 from data.schema import EVENT_FIELDS, OHLCV_FIELDS, BarSeries
 from data.validation import validate_bars
 
@@ -21,11 +22,13 @@ _EVENT_DEFAULTS = {"split_factor": 1.0, "cash_dividend": 0.0}
 
 def _read_any(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
-    if suffix == ".csv":
+    if suffix == ".csv" or path.name.lower().endswith(".csv.gz"):
         return pd.read_csv(path)
     if suffix in (".parquet", ".pq"):
         return pd.read_parquet(path)
-    raise SchemaError(f"extension no soportada: {suffix!r} (usar .csv o .parquet)")
+    raise SchemaError(
+        f"extension no soportada: {suffix!r} (usar .csv, .csv.gz o .parquet)"
+    )
 
 
 def bars_from_frame(
@@ -104,3 +107,19 @@ def bars_to_frame(series: BarSeries) -> pd.DataFrame:
         data[field] = series.field(field)
     data["symbol"] = series.symbol
     return pd.DataFrame(data)
+
+
+def load_versioned_bars(
+    manifest_path: str | Path,
+    *,
+    instrument: InstrumentSpec,
+    freq: str,
+    calendar: Calendar | None = None,
+) -> BarSeries:
+    """Carga un dataset versionado **solo si** su SHA256 coincide con el manifest.
+
+    Es la puerta de los datos reales del estudio: un CSV editado despues de
+    versionarse no llega a una ``BarSeries``.
+    """
+    path = verify_manifest(Path(manifest_path))
+    return load_bars(path, instrument=instrument, freq=freq, calendar=calendar)

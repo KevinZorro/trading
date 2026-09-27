@@ -41,3 +41,8 @@ data/interim/
 .idea/
 .vscode/
 *.swp
+
+# Credenciales: nunca en git (CLAUDE.md, Seguridad de la ejecucion real).
+.env
+.env.*
+!.env.example

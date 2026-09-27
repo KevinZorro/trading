@@ -8,16 +8,32 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # datasets/ se excluye: son archivos verificados por SHA256 contra su
+      # manifest, y el reporte de validacion es salida generada. Un hook que
+      # los "arregle" rompe la verificacion.
       - id: trailing-whitespace
+        exclude: ^datasets/
       - id: end-of-file-fixer
+        exclude: ^datasets/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=512]
+        # Los datasets versionados son la excepcion declarada: se commitean sin
+        # LFS para que un clon alcance para reproducir (ver CLAUDE.md, Tamano de
+        # PR). Cada uno lleva manifest con SHA256; el resto sigue con el tope.
+        exclude: ^datasets/
       - id: no-commit-to-branch
         # main esta protegida en GitHub; esto evita el viaje de ida y vuelta.
         args: [--branch, main]
+
+  # Secretos: misma version que el job `secretos` del CI. Corre sobre lo que
+  # se esta por commitear, antes de que exista en la historia.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
 
   - repo: local
     hooks:

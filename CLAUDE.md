@@ -110,6 +110,34 @@ No los redefinas. Impórtalos o respétalos.
 - El generador sintético de Heston produce caminos continuos y por tanto gap cero.
   `overnight_gap_frac` existe para hacer testeable ese efecto.
 
+## Convención temporal de las barras
+
+Decidida al versionar el primer dataset real (Tarea C1). Rige para todo el repositorio.
+
+- **El `timestamp` de una barra es su cierre** (`close_time`), no su apertura. Todo lo
+  que la fila contiene —OHLC, volumen— se conoce recién en `timestamp`, así que la fila
+  entera es point-in-time. Binance rotula por la apertura: `data.binance` escribe
+  `timestamp = open_time + intervalo` y conserva `open_time` como columna aparte. Los
+  generadores sintéticos y los fixtures arrancan en `21:00Z` (cierre de la sesión de
+  EE.UU.) y `WeekdayCalendar` fecha cada sesión por su hora de cierre: la misma
+  convención.
+- **Regla de alineación de la Etapa 4.** Una noticia es usable en la decisión de la
+  barra `t` **si y solo si `pub_time <= close_time[t]`**, con `close_time[t] =
+  timestamp[t]`. La decisión se ejecuta en el open de `t+1`. `pub_time` es la hora de
+  publicación original (principio 2); si se modela latencia de procesamiento, se suma
+  a `pub_time` antes de comparar, nunca se resta a `close_time`.
+- **El motor colapsa la barra en un instante.** `Simulator` avanza el reloj a
+  `timestamp[t]` al abrir la barra `t`, y con esa misma marca registra el fill al open
+  de `t` y la decisión al close de `t`. Con la convención de cierre, `timestamp_decision`
+  es exacto y **`timestamp_fill` llega una barra tarde**: el fill real ocurre en
+  `close_time[t-1]` en un mercado continuo, o en la apertura de la sesión en uno con
+  gap. La contabilidad es por índice y no se afecta; lo que se afecta es comparar horas
+  de fill contra un broker (Etapa 7), que debe usar la hora que reporta el broker.
+- **El día de riesgo queda corrido una barra en intradía.** `risk.layer._dia` agrupa por
+  la fecha UTC de `timestamp`; con la convención de cierre, la barra que cierra a las
+  00:00 cae en el día siguiente al que pertenece. Con barras diarias no cambia nada (una
+  barra por día). Se corrige antes de correr la capa de riesgo sobre barras horarias.
+
 ## Invariantes de calidad y CI
 
 Consolidados al montar el pipeline. No los relajes para que algo pase.
