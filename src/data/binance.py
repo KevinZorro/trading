@@ -10,6 +10,13 @@ fecha las sesiones por su hora de cierre) y es la que hace point-in-time a la
 fila completa: todo lo que contiene se conoce en ``timestamp``. Binance rotula
 por la apertura; esa hora queda en la columna ``open_time`` para trazabilidad.
 La Etapa 4 alinea noticias contra ``timestamp`` y hereda la garantia.
+
+Klines cerradas antes de tiempo (caidas y mantenimientos del venue) conservan
+el cierre teorico como ``timestamp`` y quedan marcadas en
+``close_time_desvio_ms``. Consecuencia para el backtest: una decision tomada en
+el cierre teorico de esa barra se ejecuta en el open de la primera barra tras
+reanudar, con un gap que puede ser grande. Esas ejecuciones se identifican por
+la marca de la barra de decision y se reportan como outliers.
 """
 
 from __future__ import annotations
@@ -45,6 +52,20 @@ KLINE_FIELDS: tuple[str, ...] = (
     "ignore",
 )
 
+# Un epoch en milisegundos entre 2010 y 2100. En microsegundos o nanosegundos
+# el valor es al menos mil veces mayor y cae fuera: el cambio de unidad se
+# detecta por magnitud, sin contar filas.
+EPOCH_MS_MIN = 1_262_304_000_000  # 2010-01-01
+EPOCH_MS_MAX = 4_102_444_800_000  # 2100-01-01
+
+# Umbral entre "caidas aisladas del venue" y "error estructural". Hacen falta
+# las dos condiciones: con solo la fraccion, una descarga corta que contenga
+# una caida fallaria por accidente; con solo el conteo, una historia larga con
+# un intervalo equivocado pasaria. Observado en BTCUSDT: 1 de ~3.300 barras
+# diarias y 5 de ~78.000 horarias.
+MAX_ANOMALY_ROWS = 3
+MAX_ANOMALY_FRAC = 0.01
+
 INTERVALS: dict[str, pd.Timedelta] = {
     "1h": pd.Timedelta(hours=1),
     "1d": pd.Timedelta(days=1),
@@ -55,6 +76,7 @@ INTERVALS: dict[str, pd.Timedelta] = {
 CSV_COLUMNS: tuple[str, ...] = (
     "timestamp",
     "open_time",
+    "close_time_desvio_ms",
     "open",
     "high",
     "low",
@@ -131,9 +153,20 @@ def klines_to_frame(
 ) -> pd.DataFrame:
     """Convierte klines crudas al esquema del CSV versionado.
 
-    Descarta la barra en curso: una kline cuyo ``close_time`` no paso todavia
+    Descarta la barra en curso: una kline que no llego a su cierre teorico
     tiene high, low, close y volumen provisorios, y versionarla congelaria un
     valor que el venue va a cambiar.
+
+    Separa dos fallos que se ven igual fila por fila:
+
+    - **Cambio de unidad** (los volcados de data.binance.vision pasaron a
+      microsegundos en 2025): se detecta por la magnitud del epoch, no contando
+      filas. Falla siempre.
+    - **Anomalias del venue**: klines cerradas antes de tiempo por una caida o
+      un mantenimiento. Se conservan, se marcan en ``close_time_desvio_ms`` y se
+      reportan; no se reparan. Si son mas de ``MAX_ANOMALY_ROWS`` filas **y** mas
+      de ``MAX_ANOMALY_FRAC`` del total, ya no son aisladas sino estructurales
+      (p. ej. un intervalo distinto del pedido) y falla.
     """
     paso = _intervalo(interval)
     if not rows:
@@ -147,20 +180,36 @@ def klines_to_frame(
     crudo = pd.DataFrame([list(r) for r in rows], columns=list(KLINE_FIELDS))
     apertura = crudo["open_time"].astype("int64")
     cierre = crudo["close_time"].astype("int64")
+    for nombre, valores in (("open_time", apertura), ("close_time", cierre)):
+        fuera = valores[(valores < EPOCH_MS_MIN) | (valores > EPOCH_MS_MAX)]
+        if not fuera.empty:
+            raise SchemaError(
+                f"{nombre} fuera del rango de un epoch en milisegundos "
+                f"({fuera.head(3).tolist()}): unidad de tiempo distinta de la "
+                "esperada"
+            )
+
     paso_ms = _ms(pd.Timestamp(0, tz=UTC) + paso)
-    # Binance cierra cada kline 1 ms antes de la siguiente. Si no cuadra, el
-    # formato cambio: los volcados de data.binance.vision pasaron a
-    # microsegundos en 2025, y mezclar unidades desplaza todo 1000 veces.
-    inconsistentes = crudo.loc[cierre != apertura + paso_ms - 1, "open_time"]
-    if not inconsistentes.empty:
+    cierre_teorico = apertura + paso_ms - 1
+    desvio = cierre - cierre_teorico
+    anomalas = int((desvio != 0).sum())
+    if anomalas > MAX_ANOMALY_ROWS and anomalas > MAX_ANOMALY_FRAC * len(crudo):
         raise SchemaError(
-            f"close_time != open_time + {interval} - 1ms en open_time "
-            f"{inconsistentes.head(5).tolist()}: unidad de tiempo o intervalo "
+            f"{anomalas} de {len(crudo)} klines con close_time != open_time + "
+            f"{interval} - 1ms (primeras: "
+            f"{crudo.loc[desvio != 0, 'open_time'].head(5).tolist()}). Son "
+            "demasiadas para ser caidas aisladas del venue: intervalo o formato "
             "distintos de los esperados"
         )
 
+    # ASSUMPTION: timestamp = max(cierre teorico, close_time real + 1 ms). Es el
+    # primer instante en que la fila entera se conoce, redondeado hacia arriba a
+    # la rejilla. Si el venue cerro antes (caida), el teorico sigue siendo
+    # point-in-time y no saca la barra de la rejilla. Si cerrara despues, el
+    # teorico seria lookahead y manda el real.
+    sello_ms = np.maximum(apertura + paso_ms, cierre + 1)
     ahora_ms = int(pd.Timestamp(now).tz_localize(UTC).value // 1_000_000)
-    cerradas = cierre < ahora_ms
+    cerradas = sello_ms <= ahora_ms
     crudo = crudo.loc[cerradas].reset_index(drop=True)
     if crudo.empty:
         raise SchemaError("ninguna kline cerrada antes de `now`")
@@ -168,12 +217,12 @@ def klines_to_frame(
     frame = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                crudo["open_time"].astype("int64"), unit="ms", utc=True
-            )
-            + paso,
+                sello_ms[cerradas].to_numpy(), unit="ms", utc=True
+            ),
             "open_time": pd.to_datetime(
                 crudo["open_time"].astype("int64"), unit="ms", utc=True
             ),
+            "close_time_desvio_ms": desvio[cerradas].to_numpy(dtype="int64"),
         }
     )
     for campo in (
@@ -234,7 +283,10 @@ def build_dataset(
         downloaded_at=fin.isoformat(),
         script=script,
         notes=(
-            "timestamp = cierre de la barra (open_time + intervalo)",
+            "timestamp = cierre de la barra: max(open_time + intervalo, "
+            "close_time + 1ms)",
+            "close_time_desvio_ms != 0 marca klines cerradas antes de tiempo "
+            "por el venue (caidas, mantenimientos); se conservan sin reparar",
             "open_time se conserva como columna para trazabilidad",
             "precios sin ajustar, tal como los publica el venue",
             "barra en curso descartada: solo klines cerradas antes de downloaded_at",

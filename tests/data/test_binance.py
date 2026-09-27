@@ -43,8 +43,11 @@ T0 = pd.Timestamp("2022-01-01", tz="UTC")
 T0_MS = int(T0.value // 1_000_000)
 
 
-def kline(open_ms: int, paso_ms: int, precio: float = 100.0) -> list[Any]:
-    """Una kline en el formato exacto del venue."""
+def kline(
+    open_ms: int, paso_ms: int, precio: float = 100.0, *, close_ms: int | None = None
+) -> list[Any]:
+    """Una kline en el formato exacto del venue. ``close_ms`` fuerza un cierre
+    anomalo; por defecto es el teorico, 1 ms antes de la siguiente."""
     return [
         open_ms,
         f"{precio:.2f}",
@@ -52,7 +55,7 @@ def kline(open_ms: int, paso_ms: int, precio: float = 100.0) -> list[Any]:
         f"{precio - 1:.2f}",
         f"{precio + 1:.2f}",
         "10.50000000",
-        open_ms + paso_ms - 1,
+        open_ms + paso_ms - 1 if close_ms is None else close_ms,
         "1050.00000000",
         42,
         "5.25000000",
@@ -214,11 +217,134 @@ def test_la_barra_que_cierra_justo_ahora_todavia_no_cuenta() -> None:
 
 def test_detecta_timestamps_en_microsegundos() -> None:
     """Los volcados de data.binance.vision pasaron a microsegundos en 2025.
-    Mezclar unidades desplaza todo mil veces; tiene que fallar, no parsear."""
+    Se detecta por la magnitud del epoch, aunque sea una sola fila."""
     fila = kline(T0_MS * 1000, DIA_MS * 1000)
     with pytest.raises(SchemaError, match="unidad de tiempo"):
         klines_to_frame(
             [fila], symbol="BTCUSDT", interval="1d", now=ahora(T0_MS + 5 * DIA_MS)
+        )
+
+
+def test_un_close_time_en_microsegundos_tambien_se_detecta() -> None:
+    fila = kline(T0_MS, DIA_MS, close_ms=(T0_MS + DIA_MS - 1) * 1000)
+    with pytest.raises(SchemaError, match="close_time fuera del rango"):
+        klines_to_frame(
+            [fila], symbol="BTCUSDT", interval="1d", now=ahora(T0_MS + 5 * DIA_MS)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Anomalias del venue: se conservan, se marcan, no se reparan
+# ---------------------------------------------------------------------------
+
+
+def _horas(n: int, anomalas: set[int], *, adelanto_ms: int = -1_905_211) -> list[Any]:
+    """``n`` klines horarias; las de ``anomalas`` cierran ``adelanto_ms`` antes
+    del teorico (el desvio del 8-feb-2018 en la barra horaria)."""
+    return [
+        kline(
+            T0_MS + i * HORA_MS,
+            HORA_MS,
+            close_ms=T0_MS + (i + 1) * HORA_MS - 1 + adelanto_ms
+            if i in anomalas
+            else None,
+        )
+        for i in range(n)
+    ]
+
+
+def _convertir(filas: list[Any], n: int) -> Any:
+    return klines_to_frame(
+        filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + (n + 1) * HORA_MS)
+    )
+
+
+def test_la_kline_cerrada_antes_conserva_el_cierre_teorico() -> None:
+    """Caso real del 8-feb-2018: la barra horaria de las 00:00 cerro a las
+    00:28:14.788. Lleva timestamp 01:00 -sigue en la rejilla y es point-in-time,
+    porque a las 01:00 la fila ya se conoce entera- y queda marcada."""
+    frame = _convertir(_horas(3, {1}), 3)
+    assert len(frame) == 3
+    assert frame["timestamp"].iloc[1] == T0 + pd.Timedelta(hours=2)
+    assert frame["close_time_desvio_ms"].tolist() == [0, -1_905_211, 0]
+
+
+def test_la_kline_vacia_de_una_caida_se_conserva() -> None:
+    """Caso real del 6-sep-2017 16:00: close_time == open_time, volumen cero,
+    OHLC plano. No se descarta ni se rellena: se marca."""
+    vacia = kline(T0_MS, HORA_MS, close_ms=T0_MS)
+    vacia[5] = "0.00000000"
+    vacia[8] = 0
+    frame = _convertir([vacia, kline(T0_MS + HORA_MS, HORA_MS)], 2)
+    assert frame["close_time_desvio_ms"].iloc[0] == -(HORA_MS - 1)
+    assert frame["volume"].iloc[0] == 0.0
+    assert frame["timestamp"].iloc[0] == T0 + pd.Timedelta(hours=1)
+
+
+def test_si_el_venue_cerrara_despues_manda_el_cierre_real() -> None:
+    """No aparece en BTCUSDT, pero la regla tiene que ser correcta en las dos
+    direcciones: con el cierre teorico la fila contendria operaciones
+    posteriores a su propio timestamp. Sale de la rejilla y el calendario lo
+    senala."""
+    tarde = T0_MS + HORA_MS - 1 + 600_000  # diez minutos despues del teorico
+    filas = [kline(T0_MS, HORA_MS, close_ms=tarde), kline(T0_MS + 2 * HORA_MS, HORA_MS)]
+    frame = klines_to_frame(
+        filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 4 * HORA_MS)
+    )
+    assert frame["timestamp"].iloc[0] == pd.Timestamp(tarde + 1, unit="ms", tz="UTC")
+    assert frame["close_time_desvio_ms"].iloc[0] == 600_000
+    frame["split_factor"], frame["cash_dividend"] = 1.0, 0.0
+    reporte = validation_report(
+        frame, instrument=binance_spot_spec(), calendar=AlwaysOpen(), freq="1h"
+    )
+    assert dict(reporte.checks)["calendario"] is not None
+
+
+def test_cinco_anomalias_en_mil_filas_pasan() -> None:
+    """0.5 %: por encima del conteo pero por debajo de la fraccion."""
+    frame = _convertir(_horas(1000, {10, 200, 400, 600, 800}), 1000)
+    assert len(frame) == 1000
+    assert int((frame["close_time_desvio_ms"] != 0).sum()) == 5
+
+
+def test_veinte_anomalias_en_mil_filas_fallan() -> None:
+    """2 %: por encima del conteo y de la fraccion. Ya no son caidas aisladas."""
+    with pytest.raises(SchemaError, match="20 de 1000 klines"):
+        _convertir(_horas(1000, set(range(0, 1000, 50))), 1000)
+
+
+def test_una_descarga_corta_con_una_caida_pasa() -> None:
+    """Una anomalia en diez filas es el 10 %, pero es una sola: una descarga
+    corta que contiene una caida no falla por accidente."""
+    frame = _convertir(_horas(10, {4}), 10)
+    assert int((frame["close_time_desvio_ms"] != 0).sum()) == 1
+
+
+@pytest.mark.parametrize(
+    ("n", "anomalas", "falla"),
+    [
+        (400, 3, False),  # 0.75 % y 3 filas: ninguna condicion
+        (400, 4, False),  # 1.00 % exacto: no supera la fraccion
+        (400, 5, True),  # 1.25 % y 5 filas: las dos
+        (4, 3, False),  # 75 % pero 3 filas: no supera el conteo
+        (4, 4, True),  # 100 %: un intervalo equivocado en una descarga minima
+    ],
+)
+def test_frontera_del_umbral_estructural(n: int, anomalas: int, falla: bool) -> None:
+    filas = _horas(n, set(range(anomalas)))
+    if falla:
+        with pytest.raises(SchemaError, match="demasiadas para ser caidas aisladas"):
+            _convertir(filas, n)
+    else:
+        assert len(_convertir(filas, n)) == n
+
+
+def test_un_intervalo_equivocado_falla() -> None:
+    """Pedir 1h y recibir klines diarias desvia el 100 % de las filas."""
+    filas = [kline(T0_MS + i * DIA_MS, DIA_MS) for i in range(30)]
+    with pytest.raises(SchemaError, match="30 de 30 klines"):
+        klines_to_frame(
+            filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 40 * DIA_MS)
         )
 
 
