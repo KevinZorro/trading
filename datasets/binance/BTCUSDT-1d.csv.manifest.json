@@ -1,0 +1,19 @@
+{
+  "file": "BTCUSDT-1d.csv",
+  "sha256": "0940f089d796da4d5bda34b30463e0c3b19b1e6b8c322f8fcd3517f2aee49cc8",
+  "rows": 3328,
+  "first_timestamp": "2017-08-18T00:00:00+00:00",
+  "last_timestamp": "2026-09-27T00:00:00+00:00",
+  "symbol": "BTCUSDT",
+  "interval": "1d",
+  "source": "https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d",
+  "downloaded_at": "2026-09-27T19:27:16.325282+00:00",
+  "script": "scripts/download_binance.py --interval 1d",
+  "notes": [
+    "timestamp = cierre de la barra: max(open_time + intervalo, close_time + 1ms)",
+    "close_time_desvio_ms != 0 marca klines cerradas antes de tiempo por el venue (caidas, mantenimientos); se conservan sin reparar",
+    "open_time se conserva como columna para trazabilidad",
+    "precios sin ajustar, tal como los publica el venue",
+    "barra en curso descartada: solo klines cerradas antes de downloaded_at"
+  ]
+}
