@@ -222,10 +222,16 @@ def test_invertido_al_maximo_da_timing_casi_nulo() -> None:
     """Un peso constante de 1.0 es un buy-and-hold con exposicion ~0.98: su
     exceso contra el B&H de exposicion igualada es casi cero. La exposicion
     media es ``0.98 * 59/60``: en la barra de la primera decision la posicion
-    todavia es cero, porque el fill llega en la barra siguiente."""
+    todavia es cero, porque el fill llega en la barra siguiente. Con capital
+    grande, para que ``min_notional`` no bloquee el rebalanceo."""
     serie, ventana = _fold_sintetico()
     registro = evaluate_fold_seed(
-        serie, np.zeros(len(serie)), ventana, 1, WalkForwardConfig(), constante()
+        serie,
+        np.zeros(len(serie)),
+        ventana,
+        1,
+        WalkForwardConfig(initial_cash=100_000.0),
+        constante(),
     )
     assert registro.exposure == pytest.approx(0.98 * 59 / 60, abs=0.002)
     assert abs(registro.t_mark) < 0.01
@@ -262,10 +268,12 @@ def test_una_decision_en_barra_marcada_es_outlier_y_no_se_filtra() -> None:
         ([0.1, 0.2, 0.3], [0.1, 0.1, 0.2], [0.90, 0.94, 0.99], "NO SUPERA"),
         ([-0.1, 0.0, 0.3], [0.1, 0.1, 0.2], [0.96, 0.97, 0.99], "NO SUPERA"),
         ([0.1, 0.2, 0.3], [0.1, 0.1, 0.2], [float("nan")] * 3, "NO SUPERA"),
+        ([0.1, 0.2, 0.3], [0.1, 0.1, 0.2], [None, 0.97, 0.99], "SUPERA"),
+        ([0.1, 0.2, 0.3], [0.1, 0.1, 0.2], [None, None, 0.99], "NO SUPERA"),
     ],
 )
 def test_veredicto_principal(
-    x_mark: list[float], x_liq: list[float], dsr: list[float], esperado: str
+    x_mark: list[float], x_liq: list[float], dsr: list[float | None], esperado: str
 ) -> None:
     assert main_verdict(x_mark, x_liq, dsr) == esperado
 
@@ -342,13 +350,17 @@ def test_corrida_completa_sellada_persistida_y_reanudable(tmp_path: Path) -> Non
     )
     assert reporte["main"]["verdict"] in {"SUPERA", "NO SUPERA"}
     assert reporte["main"]["n_outliers"] == 0  # seccion 5: ninguno esperado
+    sens = reporte["sensitivity_commission_only"]
+    assert sens["verdict"] in {"SUPERA", "NO SUPERA"}
+    assert sens["orders"]["rejected_min_notional"] >= 0
+    assert reporte["main"]["orders"]["sent"] > 0
     assert reporte["provenance"]["dataset_sha256"].startswith("0940f089")
     clases = [RegimeClass(**c) for c in reporte["prediction_adr_0004"]["classes"]]
     assert len(clases) == 11
     subsidiaria = reporte["prediction_adr_0004"]["subsidiary_3"]
     assert set(subsidiaria["per_fold"]) == {1, 4, 7}
     assert isinstance(subsidiaria["sostenida"], bool)
-    assert reporte["provenance"]["adr_seal_commit"] == "fcc10ea"
+    assert reporte["provenance"]["adr_seal_commit"] == "e040707"
 
     with pytest.raises(SealError, match="el test ya se toco"):
         run_walkforward(RAIZ, tmp_path, constante(), config=config)
@@ -364,3 +376,58 @@ def test_el_digest_del_sello_cubre_los_hiperparametros_de_ppo() -> None:
     assert base.digest() != WalkForwardConfig(total_timesteps=240_000).digest()
     assert base.describe()["ppo"]["ent_coef"] == 0.0
     assert base.ppo_config().total_timesteps == 60_000  # opcion i, como el protocolo
+
+
+# ---------------------------------------------------------------------------
+# Capital de 100 USDT, rechazos y sensibilidad de costos (seccion 1.1)
+# ---------------------------------------------------------------------------
+
+
+def test_el_capital_principal_es_100_usdt() -> None:
+    assert WalkForwardConfig().initial_cash == 100.0
+    assert WalkForwardConfig().sim_config().initial_cash == 100.0
+
+
+def test_con_100_usdt_min_notional_rechaza_el_rebalanceo_y_queda_en_el_log() -> None:
+    """Peso constante 1.0 con 100 USDT: la compra inicial (~98 USDT) pasa; cada
+    rebalanceo posterior mueve ~1 USDT, por debajo de los 10 USDT de
+    ``min_notional``, y el venue lo rechaza. Rechaza y registra, no redimensiona."""
+    serie, ventana = _fold_sintetico()
+    registro = evaluate_fold_seed(
+        serie, np.zeros(len(serie)), ventana, 1, WalkForwardConfig(), constante()
+    )
+    assert registro.n_fills == 1
+    assert registro.n_rejected_min_notional >= 50
+    assert registro.n_rejected_other == 0
+    assert registro.n_orders >= registro.n_fills + registro.n_rejected_min_notional
+
+
+def test_la_sensibilidad_reevalua_la_misma_politica_sin_reentrenar() -> None:
+    serie, ventana = _fold_sintetico()
+    llamadas: list[int] = []
+
+    def fabrica(_make_env: Any, seed: int) -> Any:
+        llamadas.append(seed)
+        return ConstantWeightPolicy(1.0)
+
+    registro = evaluate_fold_seed(
+        serie, np.zeros(len(serie)), ventana, 1, WalkForwardConfig(), fabrica
+    )
+    assert llamadas == [1]  # un solo entrenamiento para los dos escenarios
+    sens = registro.sensitivity
+    # Sin spread ni slippage, buy-and-hold paga menos: crece al menos lo mismo.
+    assert (
+        sens["baselines"]["buy_and_hold"]["log_growth_mark"]
+        >= registro.baselines["buy_and_hold"]["log_growth_mark"]
+    )
+    assert len(sens["excess_daily"]) == len(registro.excess_daily)
+
+
+def test_el_escenario_de_solo_comision_no_tiene_spread_ni_slippage() -> None:
+    principal = WalkForwardConfig().sim_config(wf.PRINCIPAL)
+    solo = WalkForwardConfig().sim_config(wf.SOLO_COMISION)
+    assert principal.spread.name == "corwin_schultz"
+    assert solo.spread.name == "zero"
+    assert solo.slippage.name == "none"
+    with pytest.raises(wf.WalkForwardError, match="escenario desconocido"):
+        WalkForwardConfig().sim_config("gratis")

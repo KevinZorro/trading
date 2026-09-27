@@ -39,17 +39,19 @@ from envs.rewards import NetReturnReward
 from envs.trading_env import EnvConfig, TradingEnv
 from eval.distribution import DistributionError, deflated_sharpe, summarize
 from eval.walkforward import Window, rolling_windows
-from sim.costs import CorwinSchultzSpread, SqrtSlippage
-from sim.engine import SimConfig
+from sim.costs import CorwinSchultzSpread, NoSlippage, SqrtSlippage, ZeroSpread
+from sim.engine import SimConfig, SimResult
+from sim.orders import OrderStatus, RejectReason
 from sim.sizing import TargetWeightSizer
 
 ADR_PATH = Path("docs/adr/0006-walk-forward-sobre-btcusdt-diario.md")
-# Sello del ADR 0006 (commit fcc10ea). Cambiar el ADR, aunque sea una coma,
+# Sello del ADR 0006 (resello e040707; el sello original fcc10ea se reemplazo
+# antes de cualquier corrida). Cambiar el ADR, aunque sea una coma,
 # obliga a cambiar esta constante, y eso queda en el diff.
-ADR_SHA256 = "5d52609e36b812bd41dcf21b325bbea2a01a0fd8c40b4627a2ac550189741cfc"
+ADR_SHA256 = "eea45aa640afda2053e11905c5232352af8cdbe7ab0ff067cf48fc33d411fd72"
 # Commit que sello el ADR. Informativo: si el PR se mergea con squash deja de
 # estar en la historia de main, y lo que prueba el sello es el SHA256.
-ADR_SEAL_COMMIT = "fcc10ea"
+ADR_SEAL_COMMIT = "e040707"
 DATASET_MANIFEST = Path("datasets/binance/BTCUSDT-1d.csv.manifest.json")
 
 # Constantes del ADR 0006. Viven aca y no en la configuracion porque no son
@@ -64,6 +66,9 @@ BARRAS_SUBSIDIARIA_3 = 50  # seccion 4.3
 # perderia sus primeras 24 decisiones de cada test por el recorte, no por la
 # estrategia.
 MA_LENTA = 50
+
+PRINCIPAL = "principal"
+SOLO_COMISION = "solo_comision"
 
 PolicyFactory = Callable[[Callable[[], TradingEnv], int], Policy]
 
@@ -80,12 +85,10 @@ class SealError(WalkForwardError):
 class WalkForwardConfig:
     """Todo lo que no fija el ADR y cambia el resultado. Entra al hash del sello.
 
-    ASSUMPTION sobre costos: comision del instrumento (taker 10 bps de Binance),
-    spread de Corwin-Schultz (el estimador que manda CLAUDE.md) con tope de 200
-    bps, y slippage en raiz cuadrada con ``k = 0.1``. La ley de raiz cuadrada con
-    coeficiente 1 y la volatilidad diaria de BTC (~3.5 %) daria ``k ~ 0.035``; se
-    usa el triple, conservador. La Etapa 3.5 mide si esto es la regla correcta.
-    ``bars_per_year = 365``: cripto opera todos los dias.
+    Los valores estan fijados y argumentados en el ADR 0006, seccion 1.1: capital
+    de 100 USDT (donde muerde ``min_notional``), comision del instrumento (10 bps),
+    Corwin-Schultz con tope de 200 bps, slippage raiz con ``k = 0.1`` (el triple de
+    la ley de raiz cuadrada con la volatilidad de BTC) y 365 barras por anio.
     """
 
     train: int = 800
@@ -95,7 +98,7 @@ class WalkForwardConfig:
     seeds: tuple[int, ...] = STUDY_SEEDS
     total_timesteps: int = 60_000
     reward_scale: float = 100.0
-    initial_cash: float = 100_000.0
+    initial_cash: float = 100.0
     cash_rate: float = 0.0
     bars_per_year: float = 365.0
     safety: float = 0.98
@@ -103,15 +106,24 @@ class WalkForwardConfig:
     slippage_k: float = 0.1
     max_participation: float = 0.10
 
-    def sim_config(self) -> SimConfig:
+    def sim_config(self, scenario: str = PRINCIPAL) -> SimConfig:
+        """``principal`` decide; ``solo_comision`` es la sensibilidad (seccion 1.1):
+        la comision del instrumento sin spread ni slippage."""
+        if scenario == PRINCIPAL:
+            spread: Any = CorwinSchultzSpread(max_bps=self.spread_max_bps)
+            slippage: Any = SqrtSlippage(k=self.slippage_k)
+        elif scenario == SOLO_COMISION:
+            spread, slippage = ZeroSpread(), NoSlippage()
+        else:
+            raise WalkForwardError(f"escenario desconocido: {scenario!r}")
         return SimConfig(
             initial_cash=self.initial_cash,
-            spread=CorwinSchultzSpread(max_bps=self.spread_max_bps),
-            slippage=SqrtSlippage(k=self.slippage_k),
+            spread=spread,
+            slippage=slippage,
             max_participation=self.max_participation,
             cash_rate=self.cash_rate,
             bars_per_year=self.bars_per_year,
-            run_id="walkforward_btcusdt_1d",
+            run_id=f"walkforward_btcusdt_1d_{scenario}",
         )
 
     def ppo_config(self) -> PPOConfig:
@@ -240,7 +252,13 @@ class FoldSeedRecord:
     n_fills: int
     n_outliers: int
     e_mark_sin_outliers: float  # seccion 5, version secundaria
+    n_orders: int  # ordenes enviadas por el agente (seccion 1.1)
+    n_rejected_min_notional: int
+    n_rejected_other: int
     baselines: dict[str, dict[str, float]]
+    # Sensibilidad de costos: la MISMA politica, sin reentrenar, con solo la
+    # comision. Mismas claves que el escenario principal; no decide.
+    sensitivity: dict[str, Any] = field(repr=False)
     excess_daily: tuple[float, ...] = field(repr=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -284,25 +302,93 @@ def evaluate_fold_seed(
     calentamiento = observacion.warmup
     entrenamiento = series.slice(*training_span(window))
     escalador = scaler_for(entrenamiento, observacion)  # solo con el train del fold
-    inicio_eval = window.test[0] - calentamiento
-    evaluacion = series.slice(inicio_eval, window.test[1])
-    config_sim = config.sim_config()
+    config_sim = config.sim_config(PRINCIPAL)
     env_config = EnvConfig(
         observation=observacion, sizer=TargetWeightSizer(safety=config.safety)
     )
 
-    def entorno(serie: BarSeries) -> TradingEnv:
+    def entorno(serie: BarSeries, costos: SimConfig) -> TradingEnv:
         return build_env(
             serie,
-            config_sim,
+            costos,
             scaler=escalador,
             env_config=env_config,
             reward=NetReturnReward(scale=config.reward_scale),
         )
 
-    politica = policy_factory(lambda: entorno(entrenamiento), seed)
-    salida = run_policy(entorno(evaluacion), politica, seed=seed)
-    prefijo = max(calentamiento, MA_LENTA + 1)
+    politica = policy_factory(lambda: entorno(entrenamiento, config_sim), seed)
+    principal = _escenario(
+        series, marks, window, seed, politica, entorno, config_sim, calentamiento
+    )
+    sensibilidad = _escenario(
+        series,
+        marks,
+        window,
+        seed,
+        politica,
+        entorno,
+        config.sim_config(SOLO_COMISION),
+        calentamiento,
+    )
+    return FoldSeedRecord(
+        fold=window.index,
+        seed=seed,
+        **{k: v for k, v in principal.items() if k in _CAMPOS_PRINCIPALES},
+        sensitivity={
+            k: v for k, v in sensibilidad.items() if k in _CAMPOS_SENSIBILIDAD
+        },
+    )
+
+
+_CAMPOS_SENSIBILIDAD = (
+    "e_mark",
+    "e_liq",
+    "t_mark",
+    "t_liq",
+    "exposure",
+    "n_orders",
+    "n_rejected_min_notional",
+    "n_rejected_other",
+    "baselines",
+    "excess_daily",
+)
+_CAMPOS_PRINCIPALES = (
+    *_CAMPOS_SENSIBILIDAD,
+    "exposure_first",
+    "exposure_rest",
+    "action_std",
+    "n_fills",
+    "n_outliers",
+    "e_mark_sin_outliers",
+)
+
+
+def _rechazos(resultado: SimResult) -> tuple[int, int, int]:
+    """Ordenes enviadas, rechazadas por MIN_NOTIONAL y rechazadas por otro motivo.
+
+    Los rechazos quedan en el log de fills con su motivo: el venue rechaza y
+    registra, nunca redimensiona. Aca solo se cuentan.
+    """
+    rechazadas = [f for f in resultado.fills if f.status is OrderStatus.REJECTED]
+    minimo = sum(f.reject_reason is RejectReason.MIN_NOTIONAL for f in rechazadas)
+    return len(resultado.fills), minimo, len(rechazadas) - minimo
+
+
+def _escenario(
+    series: BarSeries,
+    marks: FloatArray,
+    window: Window,
+    seed: int,
+    politica: Policy,
+    entorno: Callable[[BarSeries, SimConfig], TradingEnv],
+    config_sim: SimConfig,
+    c: int,
+) -> dict[str, Any]:
+    """Evalua una politica ya entrenada y los baselines bajo un modelo de costos."""
+    inicio_eval = window.test[0] - c
+    evaluacion = series.slice(inicio_eval, window.test[1])
+    salida = run_policy(entorno(evaluacion, config_sim), politica, seed=seed)
+    prefijo = max(c, MA_LENTA + 1)
     bases = run_baselines(
         series.slice(window.test[0] - prefijo, window.test[1]),
         config_sim,
@@ -312,7 +398,6 @@ def evaluate_fold_seed(
     )
     agente, bh = salida.result, bases["buy_and_hold"]
 
-    c = calentamiento
     mark = np.asarray(agente.equity, dtype=np.float64)
     liq = np.asarray(agente.equity_liquidation, dtype=np.float64)
     # Los baselines se recortan a partir de su primera decision, test.start, para
@@ -341,39 +426,42 @@ def evaluate_fold_seed(
         or pd.Timedelta(f.timestamp_fill - f.timestamp_decision) > paso
     ]
     gap_outliers = sum(f.gap for f in outliers)
+    enviadas, minimo, otros = _rechazos(agente)
 
     r_agente = np.diff(mark[c:]) / mark[c:-1]
     r_bh = np.diff(bh_mark[c:]) / bh_mark[c:-1]
     acciones = np.asarray(salida.actions, dtype=np.float64)
     n = BARRAS_SUBSIDIARIA_3
-    return FoldSeedRecord(
-        fold=window.index,
-        seed=seed,
-        e_mark=_crecimiento(mark, c) - _crecimiento(bh_mark, c),
-        e_liq=_crecimiento(liq, c) - _crecimiento(bh_liq, c),
-        t_mark=timing(mark, bh_mark),
-        t_liq=timing(liq, bh_liq),
-        exposure=e,
-        exposure_first=float(invertido[:n].mean()),
-        exposure_rest=float(invertido[n:].mean()),
-        action_std=float(acciones.std()) if acciones.size else 0.0,
-        n_fills=len(ejecutados),
-        n_outliers=len(outliers),
+    return {
+        "e_mark": _crecimiento(mark, c) - _crecimiento(bh_mark, c),
+        "e_liq": _crecimiento(liq, c) - _crecimiento(bh_liq, c),
+        "t_mark": timing(mark, bh_mark),
+        "t_liq": timing(liq, bh_liq),
+        "exposure": e,
+        "exposure_first": float(invertido[:n].mean()),
+        "exposure_rest": float(invertido[n:].mean()),
+        "action_std": float(acciones.std()) if acciones.size else 0.0,
+        "n_fills": len(ejecutados),
+        "n_outliers": len(outliers),
         # Neutraliza el gap de los fills outlier: es la parte del resultado que
         # dependio de ejecutar al reanudar tras una caida o un hueco.
-        e_mark_sin_outliers=float(np.log((mark[-1] + gap_outliers) / mark[c]))
+        "e_mark_sin_outliers": float(np.log((mark[-1] + gap_outliers) / mark[c]))
         - _crecimiento(bh_mark, c),
-        baselines={
+        "n_orders": enviadas,
+        "n_rejected_min_notional": minimo,
+        "n_rejected_other": otros,
+        "baselines": {
             nombre: {
                 "log_growth_mark": _crecimiento(np.asarray(r.equity), prefijo),
                 "log_growth_liq": _crecimiento(
                     np.asarray(r.equity_liquidation), prefijo
                 ),
+                "n_rejected_min_notional": _rechazos(r)[1],
             }
             for nombre, r in bases.items()
         },
-        excess_daily=tuple(float(x) for x in r_agente - r_bh),
-    )
+        "excess_daily": tuple(float(x) for x in r_agente - r_bh),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -382,12 +470,15 @@ def evaluate_fold_seed(
 
 
 def main_verdict(
-    x_mark: Sequence[float], x_liq: Sequence[float], dsr: Sequence[float]
+    x_mark: Sequence[float], x_liq: Sequence[float], dsr: Sequence[float | None]
 ) -> str:
+    """Seccion 2. Un DSR indefinido cuenta como no significativo (0.0): es la
+    lectura conservadora, y no puede convertir un NO SUPERA en SUPERA."""
+    dsr_efectivo = [0.0 if d is None or not np.isfinite(d) else d for d in dsr]
     supera = (
         float(np.median(x_mark)) > 0.0
         and float(np.median(x_liq)) > 0.0
-        and float(np.median(dsr)) >= DSR_UMBRAL
+        and float(np.median(dsr_efectivo)) >= DSR_UMBRAL
     )
     return "SUPERA" if supera else "NO SUPERA"
 
@@ -417,8 +508,10 @@ def prediction_verdict(
     return {"verdict": veredicto, "G": brecha, "F": piso}
 
 
-def _dsr(serie: Sequence[float], varianza: float, n_trials: int) -> float:
-    """DSR, o NaN si no esta definido (exceso sin dispersion). NaN no supera 0.95."""
+def _dsr(serie: Sequence[float], varianza: float, n_trials: int) -> float | None:
+    """DSR, o ``None`` si no esta definido: un exceso sin dispersion (el agente
+    replico a buy-and-hold barra a barra) no tiene Sharpe. Indefinido no es cero,
+    y se reporta como tal; en el veredicto cuenta como no significativo."""
     try:
         return deflated_sharpe(
             np.asarray(serie, dtype=np.float64),
@@ -426,7 +519,7 @@ def _dsr(serie: Sequence[float], varianza: float, n_trials: int) -> float:
             sharpe_variance=varianza,
         ).value
     except DistributionError:
-        return float("nan")
+        return None
 
 
 def _sharpe(serie: Sequence[float]) -> float:
@@ -446,23 +539,59 @@ def assemble(
         s: sorted((r for r in records if r.seed == s), key=lambda r: r.fold)
         for s in semillas
     }
-    x_mark = [sum(r.e_mark for r in por_semilla[s]) for s in semillas]
-    x_liq = [sum(r.e_liq for r in por_semilla[s]) for s in semillas]
-    x_exp = [sum(r.t_mark for r in por_semilla[s]) for s in semillas]
-    x_sin_outliers = [
-        sum(r.e_mark_sin_outliers for r in por_semilla[s]) for s in semillas
-    ]
-    exceso = {s: [x for r in por_semilla[s] for x in r.excess_daily] for s in semillas}
-    sharpes = [_sharpe(v) for v in exceso.values()]
-    finitos = [x for x in sharpes if np.isfinite(x)]
-    varianza = float(np.var(finitos, ddof=1)) if len(finitos) > 1 else 0.0
-    dsr = [_dsr(exceso[s], varianza, DSR_N_TRIALS) for s in semillas]
-    dsr_1 = [_dsr(exceso[s], varianza, 1) for s in semillas]
 
-    def dist(nombre: str, valores: Sequence[float]) -> dict[str, object]:
+    def dist(nombre: str, valores: Sequence[float | None]) -> dict[str, object]:
         return summarize(
             nombre, semillas, list(valores), allow_fewer_seeds=allow_fewer_seeds
         ).describe()
+
+    def criterio(
+        campos: Callable[[FoldSeedRecord], Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        """Seccion 2 sobre un escenario de costos: veredicto, DSR, secundario y
+        rechazos por min_notional."""
+
+        def suma(clave: str, s: int) -> float:
+            return float(sum(campos(r)[clave] for r in por_semilla[s]))
+
+        x_mark = [suma("e_mark", s) for s in semillas]
+        x_liq = [suma("e_liq", s) for s in semillas]
+        exceso = {
+            s: [x for r in por_semilla[s] for x in campos(r)["excess_daily"]]
+            for s in semillas
+        }
+        sharpes = [_sharpe(v) for v in exceso.values()]
+        finitos = [x for x in sharpes if np.isfinite(x)]
+        varianza = float(np.var(finitos, ddof=1)) if len(finitos) > 1 else 0.0
+        dsr = [_dsr(exceso[s], varianza, DSR_N_TRIALS) for s in semillas]
+        enviadas = sum(campos(r)["n_orders"] for r in records)
+        minimo = sum(campos(r)["n_rejected_min_notional"] for r in records)
+        return {
+            "verdict": main_verdict(x_mark, x_liq, dsr),
+            "x_mark": dist("x_mark", x_mark),
+            "x_liq": dist("x_liq", x_liq),
+            "dsr_n10": dist("dsr_n10", dsr),
+            "dsr_n1": dist("dsr_n1", [_dsr(exceso[s], varianza, 1) for s in semillas]),
+            "secondary_x_exposure_matched": dist(
+                "x_exp", [suma("t_mark", s) for s in semillas]
+            ),
+            "orders": {
+                "sent": int(enviadas),
+                "rejected_min_notional": int(minimo),
+                "rejected_other": int(
+                    sum(campos(r)["n_rejected_other"] for r in records)
+                ),
+                "fraction_rejected_min_notional": minimo / enviadas
+                if enviadas
+                else None,
+            },
+        }
+
+    def principal(r: FoldSeedRecord) -> Mapping[str, Any]:
+        return asdict(r)
+
+    def sensibilidad(r: FoldSeedRecord) -> Mapping[str, Any]:
+        return r.sensitivity
 
     etiquetas = {c.fold: c.label for c in regimes}
     t_por_fold = {
@@ -482,15 +611,16 @@ def assemble(
         }
     return {
         "main": {
-            "verdict": main_verdict(x_mark, x_liq, dsr),
-            "x_mark": dist("x_mark", x_mark),
-            "x_liq": dist("x_liq", x_liq),
-            "dsr_n10": dist("dsr_n10", dsr),
-            "dsr_n1": dist("dsr_n1", dsr_1),
-            "secondary_x_exposure_matched": dist("x_exp", x_exp),
-            "secondary_x_sin_outliers": dist("x_sin_outliers", x_sin_outliers),
+            **criterio(principal),
+            "secondary_x_sin_outliers": dist(
+                "x_sin_outliers",
+                [sum(r.e_mark_sin_outliers for r in por_semilla[s]) for s in semillas],
+            ),
             "n_outliers": sum(r.n_outliers for r in records),
         },
+        # Seccion 1.1: las mismas politicas, sin reentrenar, con solo la comision.
+        # Secundaria: no decide.
+        "sensitivity_commission_only": criterio(sensibilidad),
         "prediction_adr_0004": {
             **prediction_verdict(t_por_fold, etiquetas),
             "classes": [asdict(c) for c in regimes],
@@ -511,7 +641,14 @@ def assemble(
         "per_fold": {
             k: {
                 m: dist(f"{m}_fold{k}", [getattr(r, m) for r in records if r.fold == k])
-                for m in ("e_mark", "e_liq", "t_mark", "exposure", "action_std")
+                for m in (
+                    "e_mark",
+                    "e_liq",
+                    "t_mark",
+                    "exposure",
+                    "action_std",
+                    "n_rejected_min_notional",
+                )
             }
             for k in sorted(etiquetas)
         },

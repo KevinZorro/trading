@@ -1,10 +1,15 @@
 # ADR 0006 — Walk-forward del Agente A sobre BTCUSDT diario (Tarea C)
 
-- **Estado:** aceptado y **sellado** (ver *Sellado*). D1, D3, D4 y D5 aprobadas en la
+- **Estado:** aceptado y **resellado** (ver *Sellado*). D1, D3, D4 y D5 aprobadas en la
   revisión del PR #16. Tres cambios pedidos en esa revisión y aplicados: D2 pasa a
   entrenar con train + validación, el veredicto máximo de la predicción es
   CONSISTENTE y no CONFIRMADA, y el DSR documenta que el número honesto de intentos
   es 1.
+- **Resello (2026-09-27, antes de C3):** los costos y el capital pasan a estar fijados
+  **en este documento** y no solo en el hash del runner, porque el pre-registro es lo
+  que se lee. Capital principal de 100 USDT, rechazos por `min_notional` como métrica,
+  y sensibilidad de costos sin reentrenar (sección 1.1). Ningún criterio de las
+  secciones 2 a 5 cambia.
 - **Fecha:** 2026-09-27
 - **Contexto de etapa:** Etapa 3, Tarea C. Dataset: `datasets/binance/BTCUSDT-1d.csv`,
   SHA256 `0940f089d796da4d5bda34b30463e0c3b19b1e6b8c322f8fcd3517f2aee49cc8`
@@ -75,6 +80,57 @@ nombrar los 200 días más recientes del entrenamiento para la regla de régimen
   inversor que compró una sola vez en 2020.
 - **Semillas:** las 10 de `STUDY_SEEDS`, las mismas en cada fold. En total, 110
   entrenamientos.
+
+### 1.1 Capital y costos
+
+**Capital principal: 100 USDT.** Es el capital real con el que se planea operar, y es
+donde muerde el `min_notional` de Binance (10 USDT). Mientras el equity ronde los
+100 USDT, todo cambio de exposición menor al 10 % genera una orden que el venue
+rechaza (el umbral es `10 / equity`: con 200 USDT de equity baja al 5 %):
+`check_tradable` rechaza y registra, nunca redimensiona, y el sizer no pre-redondea
+(invariantes de la Etapa 1 y 2). Ese efecto **es parte de lo que el estudio mide**.
+No hay una segunda corrida con otro capital.
+
+**Métrica de rechazos.** Cada orden rechazada queda en el log de fills con
+`status = REJECTED` y su `reject_reason`. Por fold y semilla se reportan tres cosas:
+las órdenes enviadas por el agente, las rechazadas por `MIN_NOTIONAL` y las
+rechazadas por otro motivo. En el agregado se reportan el total y la fracción. No
+entran al veredicto: explican parte de él.
+
+Los valores de costo son supuestos, no mediciones:
+
+- `ASSUMPTION` **comisión 10 bps**: la comisión taker de Binance spot sin descuentos,
+  tomada del `InstrumentSpec` (`binance_spot_spec`).
+- `ASSUMPTION` **spread de Corwin-Schultz con tope de 200 bps**: el estimador que manda
+  `CLAUDE.md` a partir de high-low. El costo de cruzar es la mitad del spread relativo.
+- `ASSUMPTION` **slippage de raíz cuadrada con `k = 0,1`**. La ley de raíz cuadrada
+  estima el impacto como `Y · σ_diaria · √(Q/V)`. Con `Y ≈ 1` y la volatilidad diaria
+  de BTC (≈ 3,5 %), da `k ≈ 0,035`. Se usa el **triple**, a propósito conservador,
+  porque no hay una calibración propia. Con 100 USDT, la participación sobre el
+  volumen diario de BTCUSDT (cientos de millones a miles de millones de USDT) es del
+  orden de 1e-7 o menor. Este término da menos de medio punto básico y es
+  prácticamente nulo. Queda fijado igual, para que la configuración sea completa.
+- `ASSUMPTION` **365 barras por año**: cripto opera todos los días. `cash_rate = 0`,
+  `safety = 0,98` y `max_participation = 0,10`.
+
+**Limitación del spread.** Es probable que Corwin-Schultz sobre barras **diarias** de
+BTC **sobreestime** el spread real de BTCUSDT, que es una fracción de punto básico. El
+estimador separa volatilidad de spread suponiendo continuidad dentro de la barra, y
+sobre un día entero de un activo con 3–4 % de volatilidad diaria el residuo que atribuye
+al spread puede ser varias veces el real. Si es así, el escenario principal cobra de
+más a toda estrategia que opere y favorece a buy-and-hold, que opera una vez por fold.
+**La calibración real del modelo de costos llega con el modo sombra de la Etapa 3.5**,
+que mide `costo_real / costo_simulado` contra el libro L2 de mainnet.
+
+**Sensibilidad de costos (secundaria, no decide).** Las **mismas** políticas
+entrenadas, sin reentrenar, se reevalúan en el mismo test con **solo la comisión de
+10 bps**: sin spread y sin slippage. Buy-and-hold y los baselines se reevalúan en el
+mismo escenario. Se reportan los dos escenarios lado a lado, con las mismas métricas
+del criterio principal (sección 2), su secundario de exposición igualada y los
+rechazos. Hay una advertencia: la política se entrenó bajo el escenario principal, y
+en la sensibilidad se la evalúa bajo costos que no vio. La sensibilidad mide cuánto
+del resultado depende del modelo de costos, **no** lo que haría una política entrenada
+con costos bajos.
 
 ## 2. Criterio principal: Agente A contra buy-and-hold, neto de costos
 
@@ -343,13 +399,19 @@ ejecución falta al menos una barra del calendario.
    (sección 3), y con `n_trials = 10` como elección conservadora cuando el número
    honesto es 1 (sección 2).
 10. **128 barras finales sin usar** (2026-05-23 a 2026-09-27).
+11. **Spread probablemente sobreestimado**: Corwin-Schultz sobre barras diarias de BTC
+    frente a un spread real de una fracción de punto básico (sección 1.1). Se acota con
+    la sensibilidad de solo comisión y se calibra en la Etapa 3.5.
+12. **Costos supuestos, no medidos**: comisión, tope del spread y `k` del slippage son
+    `ASSUMPTION` (sección 1.1).
 
 ## 7. Sellado
 
 1. Este ADR se commitea con las decisiones D1 a D5 resueltas y **se sella**: su
-   SHA256 queda registrado como constante en el runner (`agents/walkforward.py`),
-   en un PR posterior a este. Cualquier edición del archivo, aunque sea de una
-   coma, cambia el SHA256 y deja al runner sin poder correr.
+   SHA256 queda registrado como constante en el runner (`agents/walkforward.py`).
+   Cualquier edición del archivo, aunque sea de una coma, cambia el SHA256 y deja
+   al runner sin poder correr. El primer sello (`fcc10ea`) se reemplazó antes de C3
+   por el resello de la sección 1.1. Ninguna corrida usó el sello anterior.
 2. El runner de C3 **se niega a correr** si el SHA256 del ADR en disco no
    coincide con el registrado. Así, cambiar el criterio después obliga a
    cambiar la constante, y eso se ve en el diff.
