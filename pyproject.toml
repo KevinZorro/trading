@@ -46,6 +46,9 @@ markers = [
     # Necesita el grupo `rl` (torch + stable-baselines3), que no se instala por
     # defecto. Se saltea solo si el grupo no esta; ver docs/adr/0003.
     "rl: necesita stable-baselines3 y torch (uv sync --group rl)",
+    # Toca red real (Binance). Se saltea salvo RUN_NETWORK_TESTS=1, que el CI no
+    # define: el guard de tests/conftest.py sigue activo para todo lo demas.
+    "network: toca red real; solo con RUN_NETWORK_TESTS=1, nunca en CI",
 ]
 
 # ---------------------------------------------------------------------------

@@ -15,9 +15,20 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=512]
+        # Los datasets versionados son la excepcion declarada: se commitean sin
+        # LFS para que un clon alcance para reproducir (ver CLAUDE.md, Tamano de
+        # PR). Cada uno lleva manifest con SHA256; el resto sigue con el tope.
+        exclude: ^datasets/
       - id: no-commit-to-branch
         # main esta protegida en GitHub; esto evita el viaje de ida y vuelta.
         args: [--branch, main]
+
+  # Secretos: misma version que el job `secretos` del CI. Corre sobre lo que
+  # se esta por commitear, antes de que exista en la historia.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
 
   - repo: local
     hooks:

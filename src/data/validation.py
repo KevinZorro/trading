@@ -7,14 +7,17 @@ resultados que nadie puede auditar despues.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from data.calendars import Calendar
 from data.errors import (
     AdjustedPriceError,
     CalendarGapError,
+    DataError,
     DataValidationError,
     SchemaError,
 )
@@ -204,3 +207,87 @@ def validate_bars(
         if freq is None:
             raise ValueError("validar contra un calendario exige declarar freq")
         check_calendar(frame, calendar, freq)
+
+
+@dataclass(frozen=True)
+class ValidationReport:
+    """Todos los chequeos, no solo el primero que falla.
+
+    ``validate_bars`` para en el primer problema porque es una puerta. Para
+    *reportar* que tiene un dataset hace falta la lista completa, y los huecos
+    del calendario resumidos: diez fechas de muestra no dicen si falta una hora
+    o una semana.
+    """
+
+    checks: tuple[tuple[str, str | None], ...]
+    n_bars: int
+    missing_bars: int
+    gaps: int
+    longest_gap: str | None
+
+    @property
+    def passed(self) -> bool:
+        return all(error is None for _, error in self.checks)
+
+    def render(self) -> str:
+        lineas = [f"barras: {self.n_bars}"]
+        for nombre, error in self.checks:
+            lineas.append(f"  [{'OK' if error is None else 'FALLA'}] {nombre}")
+            if error is not None:
+                lineas.append(f"      {error}")
+        lineas.append(
+            f"huecos de calendario: {self.gaps} ({self.missing_bars} barras faltantes)"
+            + (f", el mas largo {self.longest_gap}" if self.longest_gap else "")
+        )
+        return "\n".join(lineas)
+
+
+def validation_report(
+    frame: pd.DataFrame,
+    *,
+    instrument: InstrumentSpec,
+    calendar: Calendar,
+    freq: str,
+) -> ValidationReport:
+    """Corre cada chequeo por separado y resume los huecos. No repara nada."""
+    chequeos: list[tuple[str, Callable[[], None]]] = [
+        ("sin precios ajustados", lambda: check_no_adjusted_prices(frame)),
+        ("esquema", lambda: check_schema(frame)),
+        ("timestamps", lambda: check_timestamps(frame)),
+        ("simbolo", lambda: check_symbol(frame, instrument)),
+        ("precios coherentes", lambda: check_prices(frame)),
+        ("eventos corporativos", lambda: check_corporate_actions(frame)),
+        ("calendario", lambda: check_calendar(frame, calendar, freq)),
+    ]
+    resultados: list[tuple[str, str | None]] = []
+    for nombre, chequeo in chequeos:
+        try:
+            chequeo()
+        except DataError as error:
+            resultados.append((nombre, str(error)))
+        else:
+            resultados.append((nombre, None))
+
+    actual = pd.DatetimeIndex(frame["timestamp"])
+    esperado = calendar.expected_index(actual[0], actual[-1], freq)
+    presentes = esperado.isin(actual)
+    faltantes = int((~presentes).sum())
+    # Un hueco es una racha de barras esperadas y ausentes.
+    inicios = (~presentes) & np.concatenate([[True], presentes[:-1]])
+    huecos = int(inicios.sum())
+    mas_largo: str | None = None
+    if huecos:
+        paso = esperado[1] - esperado[0] if len(esperado) > 1 else pd.Timedelta(0)
+        rachas = np.diff(
+            np.flatnonzero(np.diff(np.concatenate([[0], ~presentes, [0]])))
+        )[::2]
+        k = int(np.argmax(rachas))
+        desde = esperado[np.flatnonzero(inicios)[k]]
+        mas_largo = f"{int(rachas[k])} barras desde {desde} ({rachas[k] * paso})"
+    return ValidationReport(
+        checks=tuple(resultados),
+        n_bars=len(frame),
+        missing_bars=faltantes,
+        gaps=huecos,
+        longest_gap=mas_largo,
+    )

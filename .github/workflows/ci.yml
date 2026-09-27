@@ -21,6 +21,33 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------
+  # Escaneo de secretos sobre toda la historia. Binario pinneado y con su
+  # SHA256 verificado contra el publicado en el release: una accion de
+  # terceros sin pinnear es justo la clase de dependencia que puede filtrar
+  # lo que este job existe para detectar.
+  # ---------------------------------------------------------------------
+  secretos:
+    name: "Escaneo de secretos (gitleaks)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: "8.21.2"
+      GITLEAKS_SHA256: "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Instalar gitleaks pinneado
+        run: |
+          archivo="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$archivo" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archivo}"
+          echo "${GITLEAKS_SHA256}  ${archivo}" | sha256sum --check
+          tar xzf "$archivo" gitleaks
+      - name: Escanear toda la historia
+        run: ./gitleaks git --no-banner --redact --exit-code 1 .
+
+  # ---------------------------------------------------------------------
   # El job que importa. Los tests de anti-leakage son la garantia central
   # del proyecto: si el simulador filtra informacion del futuro, todos los
   # resultados del estudio son ruido. Corren solos, primero y con nombre
@@ -109,10 +136,12 @@ jobs:
       - name: Suite rapida con cobertura
         # El umbral esta en pyproject (fail_under = 85). Se repite aqui para
         # que el fallo diga el numero en el log del job.
-        run: uv run pytest -m "not slow" --cov --cov-report=term-missing --cov-fail-under=85
+        # `not network` es redundante con el salto de conftest y es a proposito:
+        # un test de red no corre en CI aunque alguien defina RUN_NETWORK_TESTS.
+        run: uv run pytest -m "not slow and not network" --cov --cov-report=term-missing --cov-fail-under=85
       - name: Reporte de duraciones
         if: always()
-        run: uv run pytest -m "not slow" --collect-only -q | tail -1
+        run: uv run pytest -m "not slow and not network" --collect-only -q | tail -1
 
   slow:
     name: "Tests lentos"

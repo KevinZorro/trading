@@ -13,8 +13,10 @@ locales; cualquier socket de red en la suite es un bug, no una dependencia.
 
 from __future__ import annotations
 
+import os
 import random
 import socket
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -77,3 +79,40 @@ def _aleatoriedad_sembrada() -> None:
     """Siembra las fuentes globales antes de cada test."""
     random.seed(GLOBAL_SEED)
     np.random.seed(GLOBAL_SEED)  # noqa: NPY002
+
+
+# ---------------------------------------------------------------------------
+# Tests de red: fuera del CI, y el guard sigue puesto para todos los demas.
+#
+# Un test marcado ``network`` verifica que el formato del venue no cambio
+# (lo que los tests contra respuestas grabadas no pueden ver). Se saltea salvo
+# con RUN_NETWORK_TESTS=1, que el CI nunca define. Solo para esos tests, y solo
+# mientras corren, se restituyen las funciones originales del socket.
+# ---------------------------------------------------------------------------
+
+RED_HABILITADA = os.environ.get("RUN_NETWORK_TESTS") == "1"
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    if RED_HABILITADA:
+        return
+    salto = pytest.mark.skip(reason="test de red: correr con RUN_NETWORK_TESTS=1")
+    for item in items:
+        if "network" in item.keywords:
+            item.add_marker(salto)
+
+
+@pytest.fixture(autouse=True)
+def _red_solo_si_marcado(request: pytest.FixtureRequest) -> Iterator[None]:
+    if not (RED_HABILITADA and request.node.get_closest_marker("network")):
+        yield
+        return
+    socket.socket.connect = _connect_original  # type: ignore[method-assign]
+    socket.socket.connect_ex = _connect_ex_original  # type: ignore[method-assign]
+    socket.create_connection = _create_connection_original
+    try:
+        yield
+    finally:
+        socket.socket.connect = _connect_bloqueado  # type: ignore[method-assign]
+        socket.socket.connect_ex = _connect_ex_bloqueado  # type: ignore[method-assign]
+        socket.create_connection = _create_connection_bloqueado  # type: ignore[assignment]
