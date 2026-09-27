@@ -1,0 +1,4 @@
+# Los datasets versionados se comparan por SHA256 contra su manifest. Una
+# conversion de fin de linea (core.autocrlf en Windows) cambiaria los bytes y
+# el manifest dejaria de verificar: se tratan como binarios.
+datasets/** -text -diff

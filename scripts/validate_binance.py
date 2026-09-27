@@ -54,8 +54,60 @@ def main() -> int:
         print("```")
         print(reporte.render())
         print("```\n")
-        _anomalias(frame, pd.Timedelta(FRECUENCIA[manifest.interval]))
+        paso = pd.Timedelta(FRECUENCIA[manifest.interval])
+        _anomalias(frame, paso)
+        _huecos(frame, paso)
+        _continuidad(frame, paso)
     return 0
+
+
+def _huecos(frame: pd.DataFrame, paso: pd.Timedelta) -> None:
+    """Cada hueco del calendario, con la barra que lo precede y el gap al reanudar."""
+    salto = frame["timestamp"].diff() / paso - 1
+    huecos = frame.index[salto > 0]
+    print(f"### Huecos de calendario: {len(huecos)}\n")
+    if len(huecos) == 0:
+        return
+    marcados = sum(int(frame.loc[i - 1, "close_time_desvio_ms"] != 0) for i in huecos)
+    print(
+        f"{marcados} de {len(huecos)} huecos siguen a una barra marcada; el resto "
+        "sigue a una barra que cerro en hora. No se rellenan. **Regla de "
+        "outliers:** una ejecucion es outlier si su barra de decision esta "
+        "marcada o si entre la barra de decision y la de ejecucion falta al menos "
+        "una barra. La marca sola no alcanza.\n"
+    )
+    print(
+        "| ultima barra antes | primera barra despues | faltan | marcada antes | gap |"
+    )
+    print("|---|---|---|---|---|")
+    for i in huecos:
+        antes, despues = frame.loc[i - 1], frame.loc[i]
+        marcada = "si" if antes["close_time_desvio_ms"] != 0 else "no"
+        gap = despues["open"] / antes["close"] - 1
+        print(
+            f"| {antes['timestamp']} | {despues['timestamp']} | {int(salto[i])} "
+            f"| {marcada} | {gap:+.3%} |"
+        )
+    print()
+
+
+def _continuidad(frame: pd.DataFrame, paso: pd.Timedelta) -> None:
+    """En un mercado 24/7 el open de una barra deberia pegarse al close anterior.
+
+    Se mide solo entre barras contiguas: a traves de un hueco el salto es otra
+    cosa y ya esta en la tabla de huecos.
+    """
+    contiguo = frame["timestamp"].diff() == paso
+    salto = (frame["open"] / frame["close"].shift() - 1).where(contiguo).abs()
+    peor = salto.nlargest(3)
+    print("### Continuidad open / close anterior (barras contiguas)\n")
+    print(
+        f"- p50 {salto.quantile(0.5):.4%}, p99 {salto.quantile(0.99):.4%}, "
+        f"max {salto.max():.4%}"
+    )
+    for i in peor.index:
+        print(f"- {frame.loc[i, 'timestamp']}: {salto[i]:.3%}")
+    print()
 
 
 def _anomalias(frame: pd.DataFrame, paso: pd.Timedelta) -> None:
@@ -73,8 +125,8 @@ def _anomalias(frame: pd.DataFrame, paso: pd.Timedelta) -> None:
         "teorico como `timestamp` (sigue siendo point-in-time) y quedan marcadas "
         "en `close_time_desvio_ms`. **Una decision tomada en el cierre de una de "
         "estas barras se ejecuta en el open de la primera barra tras reanudar**, "
-        "con un gap que puede ser grande: esas ejecuciones se reportan como "
-        "outliers, identificadas por la marca de la barra de decision.\n"
+        "con un gap que puede ser grande. Ver la regla de outliers en la seccion "
+        "de huecos.\n"
     )
     print(
         "| timestamp | open_time | cierre real | desvio | volumen | trades "

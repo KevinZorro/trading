@@ -8,8 +8,13 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # datasets/ se excluye: son archivos verificados por SHA256 contra su
+      # manifest, y el reporte de validacion es salida generada. Un hook que
+      # los "arregle" rompe la verificacion.
       - id: trailing-whitespace
+        exclude: ^datasets/
       - id: end-of-file-fixer
+        exclude: ^datasets/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict

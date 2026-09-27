@@ -15,8 +15,11 @@ Klines cerradas antes de tiempo (caidas y mantenimientos del venue) conservan
 el cierre teorico como ``timestamp`` y quedan marcadas en
 ``close_time_desvio_ms``. Consecuencia para el backtest: una decision tomada en
 el cierre teorico de esa barra se ejecuta en el open de la primera barra tras
-reanudar, con un gap que puede ser grande. Esas ejecuciones se identifican por
-la marca de la barra de decision y se reportan como outliers.
+reanudar, con un gap que puede ser grande. Lo mismo pasa en todo hueco del
+calendario, este o no precedido por una barra marcada: en BTCUSDT 1h, 17 de los
+28 huecos siguen a una barra cerrada en hora. Una ejecucion es outlier si su
+barra de decision esta marcada **o** si entre la barra de decision y la de
+ejecucion falta al menos una barra; la marca sola no alcanza.
 """
 
 from __future__ import annotations
