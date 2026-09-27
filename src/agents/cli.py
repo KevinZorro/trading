@@ -23,6 +23,7 @@ from typing import Any
 from agents.experiment import ExperimentLog, jsonable
 from agents.ppo import PPOConfig
 from agents.protocol import (
+    STUDY_SEEDS,
     ArmResult,
     MultiPathResult,
     ProtocolThresholds,
@@ -41,10 +42,6 @@ from data.fixtures import (
     level_4_control,
     level_4b_detectable_drift,
 )
-
-# Semillas del estudio. Fijas y explicitas: un rango generado al vuelo hace que
-# "10 semillas" signifique cosas distintas en dos corridas.
-STUDY_SEEDS: tuple[int, ...] = (11, 23, 37, 41, 59, 67, 73, 89, 97, 101)
 
 # Semilla del proceso generador de cada fixture. Separada de las del agente para
 # que las 10 semillas midan la varianza **del entrenamiento** sobre una serie
@@ -231,6 +228,31 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     return 0 if reporte.stopped_at is None else 1
 
 
+def cmd_walkforward(args: argparse.Namespace) -> int:
+    """Tarea C3: la corrida sellada del ADR 0006. Toca el test una sola vez."""
+    import subprocess
+
+    from agents.ppo import train_ppo
+    from agents.walkforward import WalkForwardConfig, run_walkforward
+
+    config = WalkForwardConfig()
+    ppo = config.ppo_config()
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    reporte = run_walkforward(
+        Path.cwd(),
+        Path(args.out),
+        lambda make_env, seed: train_ppo(make_env, ppo, seed=seed),
+        config=config,
+        run_commit=commit,
+        resume=args.resume,
+    )
+    print(json.dumps(jsonable(reporte["main"]), indent=2))
+    print(json.dumps(jsonable(reporte["prediction_adr_0004"]["verdict"])))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agents.cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -264,6 +286,17 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--out", default="results")
     b.add_argument("--provenance", default=None)
     b.set_defaults(func=cmd_assemble)
+
+    w = sub.add_parser(
+        "walkforward", help="Tarea C3: walk-forward sellado sobre BTCUSDT diario"
+    )
+    w.add_argument("--out", default="results/c3")
+    w.add_argument(
+        "--resume",
+        action="store_true",
+        help="continua una corrida interrumpida con la misma configuracion sellada",
+    )
+    w.set_defaults(func=cmd_walkforward)
 
     args = parser.parse_args(argv)
     resultado: int = args.func(args)

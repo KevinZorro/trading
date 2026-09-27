@@ -119,6 +119,23 @@ python -m agents.cli assemble --out results          # aplica los criterios
 
 `assemble` devuelve código distinto de cero si el protocolo se detuvo en algún nivel.
 
+### Walk-forward sobre BTCUSDT diario (Tarea C3)
+
+Implementa el ADR 0006, que está sellado. **Toca el test una sola vez.**
+
+```bash
+PYTHONPATH=src uv run --group rl python -m agents.cli walkforward --out results/c3
+```
+
+- No corre si el SHA256 del ADR 0006 en disco no coincide con el sellado
+  (`agents.walkforward.ADR_SHA256`).
+- Crea `results/c3/SEAL.json` antes del primer fold y aborta si ya existe.
+- Cada par (fold, semilla) se agrega a `records.jsonl` al terminar, no al final.
+- Si el proceso se cae, `--resume` continúa con la misma configuración sellada y no
+  reevalúa ningún par ya escrito. Con otra configuración aborta.
+- `records.jsonl` es el artefacto completo y va al GitHub Release. Al repositorio van
+  `SEAL.json` y `summary.json`, que lleva el SHA256 de `records.jsonl`.
+
 ## Estado
 
 Etapas 1 (simulador, baselines y métricas) y 2 (entorno Gymnasium) cerradas.
