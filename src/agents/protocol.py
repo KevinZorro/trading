@@ -66,6 +66,11 @@ from eval.report import RunReport, evaluate_run
 from sim.engine import SimConfig, SimResult
 from sim.sizing import TargetWeightSizer
 
+# Semillas del estudio. Fijas y explicitas: un rango generado al vuelo hace que
+# "10 semillas" signifique cosas distintas en dos corridas. Viven aca y no en la
+# CLI porque las usan el protocolo y el walk-forward por igual.
+STUDY_SEEDS: tuple[int, ...] = (11, 23, 37, 41, 59, 67, 73, 89, 97, 101)
+
 
 class Verdict(StrEnum):
     PASS = "PASS"

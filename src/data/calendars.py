@@ -21,7 +21,12 @@ UTC = "UTC"
 class Calendar(Protocol):
     """Contrato minimo: dado un rango observado, que barras deberian existir."""
 
-    name: str
+    # Property de solo lectura, no ``name: str``: las implementaciones son
+    # dataclasses frozen y un atributo de Protocol exige que sea asignable
+    # (invariante de CLAUDE.md). Con ``name: str`` ningun calendario frozen
+    # satisfacia formalmente este Protocol.
+    @property
+    def name(self) -> str: ...
 
     def expected_index(
         self, start: pd.Timestamp, end: pd.Timestamp, freq: str
