@@ -28,12 +28,15 @@ repos:
         # main esta protegida en GitHub; esto evita el viaje de ida y vuelta.
         args: [--branch, main]
 
-  # Secretos: misma version que el job `secretos` del CI. Corre sobre lo que
-  # se esta por commitear, antes de que exista en la historia.
+  # Secretos: corre sobre lo que se esta por commitear, antes de que exista en
+  # la historia. `gitleaks-system` usa el binario precompilado del PATH en vez
+  # de compilarlo con Go (que no funciona sin Go instalado, p. ej. en Windows).
+  # Version esperada: 8.21.2, la misma que pinnea el job `secretos` del CI;
+  # instalacion por sistema operativo en el README.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
-      - id: gitleaks
+      - id: gitleaks-system
 
   - repo: local
     hooks:

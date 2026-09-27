@@ -193,6 +193,20 @@ def klines_to_frame(
             )
 
     paso_ms = _ms(pd.Timestamp(0, tz=UTC) + paso)
+    # Intervalo: la separacion tipica entre aperturas consecutivas tiene que ser
+    # el intervalo pedido. La mediana es inmune a los huecos de las caidas (que
+    # solo agrandan algunas separaciones) y no depende de contar filas, asi que
+    # detecta un intervalo equivocado aunque la descarga tenga tres filas. Con
+    # dos filas separadas por un hueco la mediana es ese hueco y falla: dos
+    # aperturas no alcanzan para saber el intervalo, y se prefiere fallar.
+    if len(apertura) >= 2:
+        separacion = int(np.median(np.diff(apertura.to_numpy())))
+        if separacion != paso_ms:
+            raise SchemaError(
+                f"la mediana de la separacion entre open_time consecutivos es "
+                f"{separacion} ms y el intervalo pedido ({interval}) es {paso_ms} "
+                "ms: el venue devolvio otro intervalo"
+            )
     cierre_teorico = apertura + paso_ms - 1
     desvio = cierre - cierre_teorico
     anomalas = int((desvio != 0).sum())
