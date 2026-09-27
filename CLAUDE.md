@@ -408,9 +408,16 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   `ent_coef` (es 0.0): el `log_std` aprendido queda en σ=0.91 a 60k timesteps, y a
   240k el tiempo invertido sube de 0.67 a 0.78. Es una sola corrida y se declara así.
   Comparar A contra B con políticas a medio entrenar mediría varianza de
-  entrenamiento, no noticias: el presupuesto se fija con una curva de convergencia y
-  el σ de la política se reporta junto a la comparación. **No se aplica
-  retroactivamente a 4b**; cuando cambie, se re-corre el protocolo completo.
+  entrenamiento, no noticias: el σ de la política se reporta junto a la comparación.
+  **No se aplica retroactivamente a 4b**; cuando cambie, se re-corre el protocolo
+  completo.
+- **El presupuesto de entrenamiento se calibra sobre el fixture 4b, nunca sobre datos
+  reales.** Se aumentan los timesteps hasta que 4b pase su criterio pre-registrado, sin
+  tocar ese criterio, y ese presupuesto queda fijo para todo el estudio. Así no se
+  gasta información del mercado en elegir hiperparámetros. La grilla se declara en un
+  ADR **antes** de correrla. Hasta entonces, todo resultado sobre datos reales declara
+  que la política está subentrenada y que valida el pipeline, no concluye sobre el
+  mercado.
 - **Entrenar y juzgar son dos comandos** (`agents.cli arm` / `assemble`). Los
   criterios se aplican siempre sobre resultados guardados: revisar un umbral no
   exige reentrenar, y si alguien lo cambia después de ver los números, se ve en
@@ -514,6 +521,9 @@ notebooks/    # solo exploración
    las noticias. Adelantarla convierte tiempo de calendario en evidencia.
 4. **Pipeline de noticias** con validación point-in-time estricta. Se desarrolla **en
    paralelo** con la 3.5 mientras ésta acumula datos.
+   **Antes de la Etapa 5:** calibrar el presupuesto de entrenamiento sobre el fixture
+   4b (ver *Invariantes del Agente A*), con la grilla declarada en un ADR antes de
+   correrla.
 5. **Agente B** y comparación controlada contra A.
 6. **Barrido** de regímenes y capital. `PortfolioSimulator` multi-activo.
 7. **Paper trading** en vivo. No arranca de cero: hereda los meses de datos de la 3.5.
