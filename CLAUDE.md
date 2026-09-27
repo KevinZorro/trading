@@ -394,6 +394,23 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   "converger a estar invertido" le pide al agente aprender algo que la muestra no
   contiene, y un fallo del nivel no es un fallo del agente. `drift_t_statistic` lo
   calcula y `MultiPathResult.drift_detectable` lo contrasta.
+- **El nivel 4 son dos hipótesis y un par** (ADR 0005). **4a** es control negativo
+  puro con un solo criterio, el exceso contra la dispersión entre caminos. **4b** usa
+  un drift pre-registrado para ser detectable (μ=0.42, `t` poblacional 5.46 con la
+  fórmula de log-drift `(μ−θ/2)·√n/√(θ·bpy)`) y exige converger a invertido sin
+  rotar. **El par** —diferencia pareada de tiempo invertido, mismos shocks— es lo
+  único que distingue "reconoce el drift" de "compra por defecto".
+- **Un agregado no puede dar verde sobre un componente en rojo.** Existe
+  `Verdict.PARTIAL`: el par que responde al drift pero con 4b en FAIL es PARTIAL,
+  nunca PASS, y el hallazgo lleva las dos cifras con sus dos umbrales.
+- **Deuda antes de la Etapa 5: el presupuesto de entrenamiento.** 4b no converge por
+  presupuesto, no por el reward (0.8→1.0 vale `t`=23 sobre 60k timesteps) ni por
+  `ent_coef` (es 0.0): el `log_std` aprendido queda en σ=0.91 a 60k timesteps, y a
+  240k el tiempo invertido sube de 0.67 a 0.78. Es una sola corrida y se declara así.
+  Comparar A contra B con políticas a medio entrenar mediría varianza de
+  entrenamiento, no noticias: el presupuesto se fija con una curva de convergencia y
+  el σ de la política se reporta junto a la comparación. **No se aplica
+  retroactivamente a 4b**; cuando cambie, se re-corre el protocolo completo.
 - **Entrenar y juzgar son dos comandos** (`agents.cli arm` / `assemble`). Los
   criterios se aplican siempre sobre resultados guardados: revisar un umbral no
   exige reentrenar, y si alguien lo cambia después de ver los números, se ve en
@@ -414,6 +431,23 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   por defecto, y `coverage` reporta `overlapping_test_bars` cuando sí. Con tests
   solapados hay más observaciones que información independiente, y hay que
   decirlo antes de calcular cualquier estadístico con ellas.
+
+## Seguridad de la ejecución real (Etapa 3.5 en adelante)
+
+No negociable. Se aplica desde el primer PR que toque red.
+
+- **Mainnet es de solo lectura por construcción.** El código que envía órdenes solo
+  puede apuntar a URLs de testnet: un guard lanza error si una URL de envío de órdenes
+  no es de testnet, y hay test que lo fija. No es una convención, es una imposibilidad.
+- **Credenciales por variables de entorno o `.env`, nunca en el repo.** `.env` está en
+  `.gitignore`, y el escaneo de secretos (gitleaks) corre en pre-commit y en CI.
+- **Las API keys de mainnet, cuando existan, se crean SIN permiso de retiro.** Queda
+  escrito en el ADR de la 3.5.
+- **Los tests que tocan red llevan marcador y quedan fuera del CI.** El guard de red de
+  `tests/conftest.py` se mantiene. La lógica se testea contra respuestas grabadas y
+  versionadas.
+- **Persistencia incremental** (append) en todo proceso de larga duración. Nunca solo
+  al final: un proceso que muere a las tres semanas no puede llevarse las tres semanas.
 
 ## Anti-patrones prohibidos
 
@@ -459,13 +493,30 @@ notebooks/    # solo exploración
    `envs/`, `features/` y `sim/sizing.py`; `drive()` como costura. 478 tests.
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
    Fixtures sintéticos con señal conocida y óptimo calculable (`data/fixtures.py`) y
-   PPO con el protocolo de validación de cinco niveles (`agents/`). **Pendiente el paso
-   6**: datos reales con walk-forward, que necesita un dataset versionado que todavía
-   no existe en el repositorio.
-4. **Pipeline de noticias** con validación point-in-time estricta.
+   PPO con el protocolo de validación (`agents/`). Protocolo cerrado: 0–2 PASS, 3
+   MEASURED (memoriza, 10/10 caminos), 4a PASS, 4b FAIL, par PARTIAL. **Pendiente la
+   Tarea C**: BTCUSDT diario con walk-forward, que necesita un dataset versionado que
+   todavía no existe en el repositorio.
+3.5. **Infraestructura en vivo mínima y Agente A en sombra.** Dos validaciones con
+   propósitos distintos, que no se mezclan:
+   - **Sombra sobre mainnet → valida COSTOS.** Solo lectura, sin API key, sin órdenes.
+     Recorre la profundidad L2 real para órdenes hipotéticas de varios tamaños y
+     compara contra lo que predice el modelo de costos del simulador en ese mismo
+     momento. Corre además el Agente A sobre barras diarias reales. Métrica principal:
+     distribución de `costo_real / costo_simulado` por tamaño de orden.
+   - **Testnet → valida MECÁNICA, nunca costos.** Su libro tiene liquidez artificial y
+     precios que pueden divergir de mainnet. `BinanceTestnetVenue` implementa
+     `ExecutionVenue`: envío y cancelación, `client_order_id` idempotente ante
+     reintentos reales, reconciliación al arranque, recuperación tras caída del
+     proceso y del WebSocket.
+
+   Motivo del adelanto: "¿el simulador dice la verdad sobre los costos?" no depende de
+   las noticias. Adelantarla convierte tiempo de calendario en evidencia.
+4. **Pipeline de noticias** con validación point-in-time estricta. Se desarrolla **en
+   paralelo** con la 3.5 mientras ésta acumula datos.
 5. **Agente B** y comparación controlada contra A.
 6. **Barrido** de regímenes y capital. `PortfolioSimulator` multi-activo.
-7. **Paper trading** en vivo.
+7. **Paper trading** en vivo. No arranca de cero: hereda los meses de datos de la 3.5.
 
 ## Métricas
 
@@ -489,6 +540,21 @@ Para cada feature, sin excepción:
    qué tests lo cubren
 7. Esperar CI verde
 8. **Reportar el PR. No mergear sin aprobación humana.**
+
+### Tamaño de PR
+
+El revisor tiene unas 2 horas por semana. **Cada PR se revisa en 30–40 minutos**:
+
+- Como guía, **no más de ~500 líneas de código de producción** (`src/`) por PR. Los tests
+  van aparte de esa cuenta, pero también se leen: que no la dupliquen sin motivo.
+- **Los artefactos de resultados no se commitean completos**: solo resúmenes y
+  manifests. El manifest lleva el SHA256 de cada artefacto completo, para que un
+  resumen sea verificable contra los datos que lo produjeron. Los JSON que ya están en
+  `results/` se conservan como registro histórico —`assemble` los lee y borrarlos
+  haría irreproducible el veredicto desde un clon—; la regla aplica hacia adelante.
+- Los **datasets** no son artefactos de resultados: se versionan con su manifest
+  (SHA256, fuente, fecha, script reproductor), como exige la reproducibilidad.
+- **Si una tarea no cabe, se parte y la partición se propone antes de empezar.**
 
 ## Estilo de trabajo esperado
 
