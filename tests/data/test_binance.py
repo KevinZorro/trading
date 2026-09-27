@@ -287,9 +287,10 @@ def test_si_el_venue_cerrara_despues_manda_el_cierre_real() -> None:
     posteriores a su propio timestamp. Sale de la rejilla y el calendario lo
     senala."""
     tarde = T0_MS + HORA_MS - 1 + 600_000  # diez minutos despues del teorico
-    filas = [kline(T0_MS, HORA_MS, close_ms=tarde), kline(T0_MS + 2 * HORA_MS, HORA_MS)]
+    filas = [kline(T0_MS, HORA_MS, close_ms=tarde)]
+    filas += [kline(T0_MS + i * HORA_MS, HORA_MS) for i in (2, 3, 4)]
     frame = klines_to_frame(
-        filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 4 * HORA_MS)
+        filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 6 * HORA_MS)
     )
     assert frame["timestamp"].iloc[0] == pd.Timestamp(tarde + 1, unit="ms", tz="UTC")
     assert frame["close_time_desvio_ms"].iloc[0] == 600_000
@@ -339,10 +340,41 @@ def test_frontera_del_umbral_estructural(n: int, anomalas: int, falla: bool) -> 
         assert len(_convertir(filas, n)) == n
 
 
+def test_tres_filas_con_intervalo_equivocado_fallan() -> None:
+    """El caso que el umbral por conteo deja pasar: tres klines diarias pedidas
+    como horarias. La mediana de la separacion lo detecta sin contar filas."""
+    filas = [kline(T0_MS + i * DIA_MS, DIA_MS) for i in range(3)]
+    with pytest.raises(SchemaError, match="el venue devolvio otro intervalo"):
+        klines_to_frame(
+            filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 5 * DIA_MS)
+        )
+
+
+def test_los_huecos_de_una_caida_no_mueven_la_mediana() -> None:
+    """Diez horas, un hueco de 33 horas en el medio: la separacion mediana sigue
+    siendo una hora."""
+    filas = [kline(T0_MS + i * HORA_MS, HORA_MS) for i in range(5)]
+    filas += [kline(T0_MS + (38 + i) * HORA_MS, HORA_MS) for i in range(5)]
+    frame = klines_to_frame(
+        filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 50 * HORA_MS)
+    )
+    assert len(frame) == 10
+
+
+def test_una_sola_fila_no_tiene_separacion_que_medir() -> None:
+    frame = klines_to_frame(
+        [kline(T0_MS, DIA_MS)],
+        symbol="BTCUSDT",
+        interval="1d",
+        now=ahora(T0_MS + DIA_MS),
+    )
+    assert len(frame) == 1
+
+
 def test_un_intervalo_equivocado_falla() -> None:
     """Pedir 1h y recibir klines diarias desvia el 100 % de las filas."""
     filas = [kline(T0_MS + i * DIA_MS, DIA_MS) for i in range(30)]
-    with pytest.raises(SchemaError, match="30 de 30 klines"):
+    with pytest.raises(SchemaError, match="el venue devolvio otro intervalo"):
         klines_to_frame(
             filas, symbol="BTCUSDT", interval="1h", now=ahora(T0_MS + 40 * DIA_MS)
         )
