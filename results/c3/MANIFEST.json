@@ -1,0 +1,29 @@
+{
+  "tarea": "C3 - walk-forward del Agente A sobre BTCUSDT diario (ADR 0006)",
+  "artefacto_completo": {
+    "file": "records.jsonl.gz",
+    "sha256": "ce240c90d741a51599dd0ecba2c2c3376b7ac85c48812ad132c27406a5bf6cd3",
+    "descomprimido": {
+      "file": "records.jsonl",
+      "sha256": "075e7e26879f4fb2ecbc245961778b88c822fb4a8d4600bed582cdf5a767643a",
+      "lineas": 110
+    },
+    "destino": "GitHub Release c3-results",
+    "url": "https://github.com/KevinZorro/trading/releases/tag/c3-results",
+    "nota": "records.jsonl.gz no se commitea: vive en el Release (CLAUDE.md, Tamano de PR). Tambien quedo en el historial de la rama claude/c3-resultados, commit a257eab."
+  },
+  "summary": {
+    "file": "summary.json",
+    "sha256": "7961961f8759c99b20e5d07c9fd78ae526536572b234c99904007b569afd6782"
+  },
+  "seal": {
+    "file": "SEAL.json",
+    "sha256": "d4eb966a10b746081ffc03ad0bde2bf5522b3912263170f2138fe9aca8ac7a99"
+  },
+  "adr_sha256": "eea45aa640afda2053e11905c5232352af8cdbe7ab0ff067cf48fc33d411fd72",
+  "adr_seal_commit": "e040707",
+  "run_commit": "a861623703ade004b4de353d259daa3d4a829f92",
+  "dataset_sha256": "0940f089d796da4d5bda34b30463e0c3b19b1e6b8c322f8fcd3517f2aee49cc8",
+  "config_digest": "75282f79fe9499c8e156019309d94ee613e168e8fd7c4587afd0fe83f504f135",
+  "verificacion": "sha256sum records.jsonl.gz; gunzip -k records.jsonl.gz && sha256sum records.jsonl (debe coincidir con summary.json provenance.records_sha256)"
+}
