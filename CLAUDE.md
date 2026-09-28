@@ -525,6 +525,7 @@ src/
   features/   # technical (RSI, MACD, ATR, Bollinger), scaler fit-en-train
   envs/       # trading_env, observation, rewards (wrapper delgado, sin lógica propia)
   agents/     # baselines, policy, runner, ppo (grupo opcional), protocol, cli
+  live/       # sombra sobre mainnet (solo lectura) y testnet: config, guard, logs
   configs/
 tests/
 docs/adr/
