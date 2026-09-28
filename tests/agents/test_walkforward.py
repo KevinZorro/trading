@@ -431,3 +431,45 @@ def test_el_escenario_de_solo_comision_no_tiene_spread_ni_slippage() -> None:
     assert solo.slippage.name == "none"
     with pytest.raises(wf.WalkForwardError, match="escenario desconocido"):
         WalkForwardConfig().sim_config("gratis")
+
+
+# ---------------------------------------------------------------------------
+# Posterior a C3: conteo por motivo y sizer en el digest
+# ---------------------------------------------------------------------------
+
+DIGEST_C3 = "75282f79fe9499c8e156019309d94ee613e168e8fd7c4587afd0fe83f504f135"
+
+
+def test_el_conteo_por_motivo_cuadra_con_los_rechazos() -> None:
+    serie, ventana = _fold_sintetico()
+    registro = evaluate_fold_seed(
+        serie, np.zeros(len(serie)), ventana, 1, WalkForwardConfig(), constante()
+    )
+    motivos = registro.rejected_by_reason
+    assert motivos.get("MIN_NOTIONAL", 0) == registro.n_rejected_min_notional
+    assert sum(motivos.values()) == (
+        registro.n_rejected_min_notional + registro.n_rejected_other
+    )
+    assert "rejected_by_reason" in registro.sensitivity
+
+
+def test_un_registro_de_c3_sin_conteo_por_motivo_se_sigue_leyendo() -> None:
+    """C3 guardo solo MIN_NOTIONAL y 'otro'. Se lee como {}: 'no registrado',
+    que es distinto de 'cero rechazos'."""
+    serie, ventana = _fold_sintetico()
+    datos = evaluate_fold_seed(
+        serie, np.zeros(len(serie)), ventana, 1, WalkForwardConfig(), constante()
+    ).to_dict()
+    del datos["rejected_by_reason"]
+    del datos["sensitivity"]["rejected_by_reason"]
+    leido = FoldSeedRecord.from_dict(datos)
+    assert leido.rejected_by_reason == {}
+    assert leido.sensitivity["rejected_by_reason"] == {}
+
+
+def test_c3_no_se_puede_reanudar_con_el_sizer_nuevo() -> None:
+    """El sizer entra al digest del sello. Reanudar C3 con este codigo falla en
+    vez de mezclar dos definiciones de que es una orden."""
+    config = WalkForwardConfig()
+    assert config.describe()["sizer"]["numeric_zero_rel"] == 1e-12
+    assert config.digest() != DIGEST_C3

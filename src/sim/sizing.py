@@ -16,6 +16,16 @@ Dos reglas que el proyecto ya fija en otros lados y que aca se respetan:
 2. **No se recorta contra el cash.** Si el delta no entra, el venue lo rechaza
    con ``INSUFFICIENT_CASH`` y el rechazo queda registrado. Recortarlo aca
    seria redimensionar en silencio.
+
+3. **Un delta que es cero numerico no es una orden.** El ledger acumula residuo
+   de punto flotante: tras cerrar una posicion puede quedar en ~1e-18 en vez de
+   0. Sin esta regla, un agente que quiere quedarse fuera y ya esta fuera
+   emitia una "orden" por ese residuo en cada barra, el venue la rechazaba por
+   ``ZERO_AFTER_ROUNDING`` y la observacion decia "no pude" donde correspondia
+   "no quise". Medido en C3: 61 de 70 rechazos por redondeo de una muestra
+   in-sample eran residuo (<= 3.9e-18 BTC); los otros 9 eran deltas reales por
+   debajo del lote (>= 1.4e-6 BTC). Hay doce ordenes de magnitud entre unos y
+   otros, y ``CERO_NUMERICO_REL`` cae en el medio.
 """
 
 from __future__ import annotations
@@ -25,6 +35,13 @@ from dataclasses import dataclass
 from sim.engine import LONG_ONLY_ACTION_RANGE
 from sim.orders import MarketOrder
 from sim.view import AccountSnapshot, MarketView
+
+# Umbral de "delta cero" en nocional relativo al equity. No es una banda muerta
+# economica (eso es ``deadband``, configurable y 0.0 por defecto): es la
+# tolerancia de igualdad en punto flotante, como ``DISPERSION_NULA_REL`` en
+# ``eval``. 1e-12 del equity son 1e-10 USDT sobre 100 USDT: ninguna orden real
+# es tan chica, y el residuo del ledger (~1e-18 BTC ~ 1e-13 USDT) queda debajo.
+CERO_NUMERICO_REL = 1e-12
 
 
 @dataclass(frozen=True)
@@ -67,9 +84,10 @@ class TargetWeightSizer:
     ) -> MarketOrder | None:
         """Orden que lleva la posicion al peso objetivo, o ``None`` si ya esta.
 
-        Devuelve ``None`` **solo** cuando no hay nada que hacer: el delta cae
-        dentro de la banda muerta. Nunca por creer que la orden se va a
-        rechazar; eso lo decide el venue y queda en el log.
+        Devuelve ``None`` **solo** cuando no hay nada que hacer: el delta es cero
+        numerico ("no quise") o cae dentro de la banda muerta. Nunca por creer
+        que la orden se va a rechazar: un delta real que se redondea a cero se
+        envia y el venue lo rechaza con su motivo ("no pude").
         """
         bajo, alto = LONG_ONLY_ACTION_RANGE
         if not bajo <= target_weight <= alto:
@@ -87,9 +105,19 @@ class TargetWeightSizer:
         objetivo_qty = target_weight * account.equity * self.safety / price
         delta = objetivo_qty - account.position
 
-        if abs(delta) * price <= self.deadband * account.equity:
+        nocional = abs(delta) * price
+        if nocional <= CERO_NUMERICO_REL * account.equity:
+            return None  # cero numerico: residuo de punto flotante, no una orden
+        if nocional <= self.deadband * account.equity:
             return None
         return MarketOrder(qty=delta, tag=self.tag)
 
     def describe(self) -> dict[str, object]:
-        return {"safety": self.safety, "deadband": self.deadband, "tag": self.tag}
+        return {
+            "safety": self.safety,
+            "deadband": self.deadband,
+            "tag": self.tag,
+            # Viaja serializado: cambia que ordenes existen, y por lo tanto la
+            # observacion del agente (last_order_rejected).
+            "numeric_zero_rel": CERO_NUMERICO_REL,
+        }

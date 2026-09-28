@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -138,6 +138,10 @@ class WalkForwardConfig:
         # Todos los hiperparametros de PPO entran al hash del sello: cambiar un
         # default de PPOConfig despues de sellar cambia el digest y se detecta.
         datos["ppo"] = self.ppo_config().describe()
+        # El sizer define que ordenes existen y por lo tanto la observacion del
+        # agente (last_order_rejected). Entra al digest: reanudar una corrida
+        # sellada con otro sizer falla en vez de mezclar comportamientos.
+        datos["sizer"] = TargetWeightSizer(safety=self.safety).describe()
         return datos
 
     def digest(self) -> str:
@@ -255,6 +259,9 @@ class FoldSeedRecord:
     n_orders: int  # ordenes enviadas por el agente (seccion 1.1)
     n_rejected_min_notional: int
     n_rejected_other: int
+    # Conteo por RejectReason. Ausente en los registros de C3, que solo guardaron
+    # MIN_NOTIONAL y "otro": se lee como {} y el reporte lo dice.
+    rejected_by_reason: dict[str, int]
     baselines: dict[str, dict[str, float]]
     # Sensibilidad de costos: la MISMA politica, sin reentrenar, con solo la
     # comision. Mismas claves que el escenario principal; no decide.
@@ -270,6 +277,8 @@ class FoldSeedRecord:
     def from_dict(cls, datos: dict[str, Any]) -> FoldSeedRecord:
         completo = dict(datos)
         completo["excess_daily"] = tuple(completo["excess_daily"])
+        completo.setdefault("rejected_by_reason", {})
+        completo["sensitivity"] = {"rejected_by_reason": {}, **completo["sensitivity"]}
         return cls(**completo)
 
 
@@ -349,6 +358,7 @@ _CAMPOS_SENSIBILIDAD = (
     "n_orders",
     "n_rejected_min_notional",
     "n_rejected_other",
+    "rejected_by_reason",
     "baselines",
     "excess_daily",
 )
@@ -363,15 +373,30 @@ _CAMPOS_PRINCIPALES = (
 )
 
 
-def _rechazos(resultado: SimResult) -> tuple[int, int, int]:
-    """Ordenes enviadas, rechazadas por MIN_NOTIONAL y rechazadas por otro motivo.
+def _rechazos(resultado: SimResult) -> tuple[int, int, int, dict[str, int]]:
+    """Ordenes enviadas, rechazadas por MIN_NOTIONAL, por otro motivo, y el
+    conteo por motivo.
 
     Los rechazos quedan en el log de fills con su motivo: el venue rechaza y
-    registra, nunca redimensiona. Aca solo se cuentan.
+    registra, nunca redimensiona. Aca solo se cuentan. El conteo por motivo
+    existe porque C3 guardo solo "otro" y no se pudo saber que era sin tocar el
+    test de nuevo.
     """
     rechazadas = [f for f in resultado.fills if f.status is OrderStatus.REJECTED]
-    minimo = sum(f.reject_reason is RejectReason.MIN_NOTIONAL for f in rechazadas)
-    return len(resultado.fills), minimo, len(rechazadas) - minimo
+    por_motivo: dict[str, int] = {}
+    for f in rechazadas:
+        clave = f.reject_reason.value if f.reject_reason is not None else "SIN_MOTIVO"
+        por_motivo[clave] = por_motivo.get(clave, 0) + 1
+    minimo = por_motivo.get(RejectReason.MIN_NOTIONAL.value, 0)
+    return len(resultado.fills), minimo, len(rechazadas) - minimo, por_motivo
+
+
+def _sumar_motivos(conteos: Iterable[Mapping[str, int]]) -> dict[str, int]:
+    total: dict[str, int] = {}
+    for conteo in conteos:
+        for motivo, n in conteo.items():
+            total[motivo] = total.get(motivo, 0) + n
+    return dict(sorted(total.items()))
 
 
 def _escenario(
@@ -426,7 +451,7 @@ def _escenario(
         or pd.Timedelta(f.timestamp_fill - f.timestamp_decision) > paso
     ]
     gap_outliers = sum(f.gap for f in outliers)
-    enviadas, minimo, otros = _rechazos(agente)
+    enviadas, minimo, otros, por_motivo = _rechazos(agente)
 
     r_agente = np.diff(mark[c:]) / mark[c:-1]
     r_bh = np.diff(bh_mark[c:]) / bh_mark[c:-1]
@@ -450,6 +475,7 @@ def _escenario(
         "n_orders": enviadas,
         "n_rejected_min_notional": minimo,
         "n_rejected_other": otros,
+        "rejected_by_reason": por_motivo,
         "baselines": {
             nombre: {
                 "log_growth_mark": _crecimiento(np.asarray(r.equity), prefijo),
@@ -584,6 +610,9 @@ def assemble(
                 "fraction_rejected_min_notional": minimo / enviadas
                 if enviadas
                 else None,
+                "rejected_by_reason": _sumar_motivos(
+                    campos(r)["rejected_by_reason"] for r in records
+                ),
             },
         }
 
