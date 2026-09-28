@@ -87,20 +87,29 @@ tocar el test dos veces. Un diagnóstico **sin tocar el test** apunta a la causa
 
 - Se entrenó un agente igual sobre el entrenamiento del fold 0 y se lo evaluó dentro
   de esa misma muestra.
-- Los rechazos por otro motivo fueron todos `ZERO_AFTER_ROUNDING`, y la mayoría con
-  cantidad **exactamente 0**.
-- Cuando el agente quiere quedarse fuera y ya lo está, el sizer emite igual una orden
-  de cantidad cero, y el venue la registra como rechazada.
+- Los rechazos por otro motivo fueron todos `ZERO_AFTER_ROUNDING`.
+- De 70, **61 eran residuo de punto flotante** del ledger (≤ 3,9e-18 BTC): tras
+  cerrar una posición, el ledger queda con ~1e-18 en vez de 0, y con la acción en 0
+  el sizer mandaba una orden por ese residuo en cada barra.
+- Los otros **9 eran deltas reales menores a un lote** (1,4e-6 a 9,9e-6 BTC): esos sí
+  son rechazos legítimos.
+- Un primer reporte de este diagnóstico decía "cantidad exactamente 0". Era incorrecto:
+  los valores se habían impreso redondeados a 6 decimales.
 
 Eso no afecta al P&L. Sí infla el denominador de las órdenes enviadas y marca
 `last_order_rejected` ("no pude") donde correspondía "no quise". Se corrige después
-de C3, y eso altera la observación del agente: **los resultados posteriores no son
-comparables con este**.
+de C3 con la regla del cero numérico del sizer (PR #20), y eso altera la observación
+del agente: **los resultados posteriores no son comparables con este**.
 
-**Estimación declarada, no medición.** *Si* las 9 520 órdenes de otro motivo fueran
-todas vacías, la tasa de rechazo por `min_notional` sobre órdenes reales sería
-**≈ 41 %** (2 915 / 7 081). Es una **cota a verificar**: el diagnóstico in-sample
-también mostró algunos `ZERO_AFTER_ROUNDING` de cantidad no nula (deltas menores a un
-lote de 1e-5 BTC, que son rechazos reales), así que la tasa real sobre órdenes no
-vacías cae entre el 17,6 % y el 41 %. La primera corrida con el conteo por motivo la
-mide.
+**Estimaciones declaradas, no mediciones.** La tasa de rechazo por `min_notional`
+sobre órdenes reales (sin residuo) cae entre dos extremos:
+
+| Supuesto | Órdenes reales | Tasa `MIN_NOTIONAL` |
+|---|---|---|
+| Ninguna de las 9 520 es residuo | 16 601 | 17,6 % (piso) |
+| La proporción in-sample (61/70 residuo) vale para C3 | ≈ 8 305 | **≈ 35 %** |
+| Las 9 520 son todas residuo | 7 081 | **≈ 41 %** (cota superior) |
+
+El 35 % extrapola una sola muestra in-sample (un fold, una semilla) a 110 pares fuera
+de muestra. **Es una cota a verificar, no una medición.** La primera corrida con el
+conteo por motivo lo mide.
