@@ -136,6 +136,63 @@ PYTHONPATH=src uv run --group rl python -m agents.cli walkforward --out results/
 - `records.jsonl` es el artefacto completo y va al GitHub Release. Al repositorio van
   `SEAL.json` y `summary.json`, que lleva el SHA256 de `records.jsonl`.
 
+## Modo sombra (Etapa 3.5)
+
+Diseño, seguridad y métrica pre-registrada en `docs/adr/0007-modo-sombra-y-testnet.md`.
+La sombra lee datos públicos de mainnet y **no envía órdenes**; el código que envía
+órdenes solo acepta hosts de testnet (`live.guard`). En este PR solo existe la
+configuración: el proceso llega en los PRs siguientes.
+
+### Configuración
+
+Todo por variables de entorno con prefijo `SHADOW_`. Copia `.env.example` a `.env`
+(que está en `.gitignore`) y complétalo. **Nunca pongas un token en un archivo
+versionado.**
+
+| Variable | Por defecto | |
+|---|---|---|
+| `SHADOW_DATA_DIR` | — | Obligatoria. Donde se persisten los snapshots |
+| `SHADOW_SYMBOL` | `BTCUSDT` | |
+| `SHADOW_ORDER_SIZES_USDT` | `10,100,1000` | Tamaños de las órdenes hipotéticas |
+| `SHADOW_SNAPSHOT_MINUTES` | `15` | Debe dividir a 60 |
+| `SHADOW_DEPTH_LIMIT` | `1000` | Niveles del libro por snapshot |
+| `SHADOW_HEARTBEAT_MAX_AGE_MINUTES` | `45` | Minutos sin escribir antes de alertar |
+| `SHADOW_MARKET_DATA_URL` | `https://data-api.binance.vision` | Solo HTTPS |
+| `SHADOW_TELEGRAM_TOKEN` | vacío | Secreto. Va junto con el chat_id |
+| `SHADOW_TELEGRAM_CHAT_ID` | vacío | |
+
+Sin las dos variables de Telegram la sombra corre igual, pero sin alertas.
+
+### Crear el bot de Telegram para las alertas
+
+1. En Telegram, abre una conversación con **@BotFather** (verifica la marca azul de
+   cuenta oficial) y envía `/newbot`. Elige un nombre y un usuario que termine en
+   `bot`.
+2. BotFather responde con el **token**, de la forma `123456789:AA...`. Es una
+   credencial: quien lo tenga puede escribir como tu bot. Guárdalo directamente en
+   `.env` como `SHADOW_TELEGRAM_TOKEN=...`, y no lo pegues en issues, PRs ni chats.
+3. Abre una conversación con tu bot nuevo y envíale cualquier mensaje. Un bot no
+   puede escribirte hasta que tú le escribas primero.
+4. Obtén tu `chat_id`. Desde una terminal, con el token en la variable de entorno
+   (así no queda en el historial):
+
+   ```bash
+   set -a; . ./.env; set +a
+   curl -s "https://api.telegram.org/bot${SHADOW_TELEGRAM_TOKEN}/getUpdates"
+   ```
+
+   En PowerShell:
+
+   ```powershell
+   $t = (Select-String -Path .env -Pattern '^SHADOW_TELEGRAM_TOKEN=(.*)$').Matches[0].Groups[1].Value
+   Invoke-RestMethod "https://api.telegram.org/bot$t/getUpdates" | ConvertTo-Json -Depth 6
+   ```
+
+   El número en `result[0].message.chat.id` es el `chat_id`. Guárdalo como
+   `SHADOW_TELEGRAM_CHAT_ID=...` en `.env`.
+5. Si el token se filtra, en @BotFather usa `/revoke` para invalidarlo y generar
+   otro.
+
 ## Estado
 
 Etapas 1 (simulador, baselines y métricas) y 2 (entorno Gymnasium) cerradas.
