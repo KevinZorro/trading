@@ -13,7 +13,7 @@ import pytest
 
 from data.instruments import CommissionSchema, InstrumentSpec, us_equity_spec
 from sim.engine import LONG_ONLY_ACTION_RANGE
-from sim.sizing import TargetWeightSizer
+from sim.sizing import CERO_NUMERICO_REL, TargetWeightSizer
 from sim.view import AccountSnapshot, MarketView
 
 from .conftest import make_series
@@ -152,7 +152,39 @@ class TestBandaMuerta:
     def test_la_banda_se_serializa_con_la_corrida(self) -> None:
         """Una banda escondida en el codigo seria autocensura; en la config, no."""
         d = TargetWeightSizer(safety=0.95, deadband=0.02).describe()
-        assert d == {"safety": 0.95, "deadband": 0.02, "tag": "target_weight"}
+        assert d == {
+            "safety": 0.95,
+            "deadband": 0.02,
+            "tag": "target_weight",
+            "numeric_zero_rel": CERO_NUMERICO_REL,
+        }
+
+
+class TestCeroNumerico:
+    """ "No quise" contra "no pude": un residuo de punto flotante no es una orden;
+    un delta real por debajo del lote si lo es, y lo rechaza el venue."""
+
+    def test_el_residuo_del_ledger_no_genera_orden(self, vista) -> None:
+        """Caso medido en C3: posicion ~3.9e-18 tras cerrar, accion 0."""
+        assert (
+            TargetWeightSizer().order_for(0.0, vista, cuenta(position=3.9e-18)) is None
+        )
+        assert (
+            TargetWeightSizer().order_for(0.0, vista, cuenta(position=-4e-19)) is None
+        )
+
+    def test_un_delta_real_bajo_el_lote_se_envia(self, vista) -> None:
+        """1.4e-6 unidades, el menor delta real de la muestra: se envia igual."""
+        orden = TargetWeightSizer().order_for(0.0, vista, cuenta(position=1.4e-6))
+        assert orden is not None
+        assert orden.qty == pytest.approx(-1.4e-6)
+
+    def test_la_frontera_es_relativa_al_equity(self, vista) -> None:
+        """Con equity 10_000 y precio 100, el umbral es 1e-12 * 10_000 / 100 =
+        1e-10 unidades: por debajo no hay orden, por encima si."""
+        sizer = TargetWeightSizer()
+        assert sizer.order_for(0.0, vista, cuenta(position=0.9e-10)) is None
+        assert sizer.order_for(0.0, vista, cuenta(position=1.1e-10)) is not None
 
 
 class TestValidacion:

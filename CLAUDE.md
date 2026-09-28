@@ -281,6 +281,18 @@ Consolidados en la Etapa 2. El env es un **wrapper delgado**: rutea, no calcula.
   hacia cero: redondear ahí convertiría un delta chico en `qty=0` y la orden
   desaparecería del log. Se manda sin redondear y el venue rechaza con su motivo.
   `deadband=0.0` por defecto; una banda muerta se configura explícita y se serializa.
+- **Un delta que es cero numérico no es una orden** ("no quise"); un delta real que se
+  redondea a cero sí lo es, y el venue lo rechaza ("no pude"). El ledger acumula
+  residuo de punto flotante (~1e-18 BTC tras cerrar una posición), así que "cero" se
+  evalúa con tolerancia relativa (`sim.sizing.CERO_NUMERICO_REL = 1e-12` del equity en
+  nocional), no con igualdad exacta: la regla literal "diferencia exactamente 0" no
+  resolvía nada. Medido en una muestra in-sample posterior a C3: 61 de 70 rechazos por
+  redondeo eran residuo (≤ 3.9e-18 BTC) y 9 eran deltas reales bajo el lote (≥ 1.4e-6
+  BTC); el umbral cae en el medio de doce órdenes de magnitud.
+  **Este cambio altera la observación del agente** (`last_order_rejected` deja de marcar
+  "no pude" donde correspondía "no quise") y el conteo de órdenes: **los resultados
+  posteriores no son comparables con C3**. El sizer entra al digest del sello del
+  walk-forward, así que C3 no se puede reanudar con el sizer nuevo.
 - **`safety` define qué significa la acción, no censura órdenes.** Un peso de 1.0 es "lo
   más invertido que se puede estar sin conocer el precio de ejecución" (98% por defecto).
   Estar exactamente all-in exigiría lookahead.
@@ -529,9 +541,10 @@ notebooks/    # solo exploración
 3. **Agente A** (solo precio), un activo, un régimen. ¿Supera buy-and-hold neto de costos?
    Fixtures sintéticos con señal conocida y óptimo calculable (`data/fixtures.py`) y
    PPO con el protocolo de validación (`agents/`). Protocolo cerrado: 0–2 PASS, 3
-   MEASURED (memoriza, 10/10 caminos), 4a PASS, 4b FAIL, par PARTIAL. **Pendiente la
-   Tarea C**: BTCUSDT diario con walk-forward, que necesita un dataset versionado que
-   todavía no existe en el repositorio.
+   MEASURED (memoriza, 10/10 caminos), 4a PASS, 4b FAIL, par PARTIAL. **Tarea C
+   cerrada** (ADR 0006, `results/c3/REPORTE.md`): NO SUPERA a buy-and-hold, predicción
+   del ADR 0004 NO CONCLUYENTE, con política subentrenada y N = 1. Corrió con el sizer
+   anterior a la regla del cero numérico: no es comparable con corridas posteriores.
 3.5. **Infraestructura en vivo mínima y Agente A en sombra.** Dos validaciones con
    propósitos distintos, que no se mezclan:
    - **Sombra sobre mainnet → valida COSTOS.** Solo lectura, sin API key, sin órdenes.
