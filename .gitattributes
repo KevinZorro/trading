@@ -2,3 +2,5 @@
 # conversion de fin de linea (core.autocrlf en Windows) cambiaria los bytes y
 # el manifest dejaria de verificar: se tratan como binarios.
 datasets/** -text -diff
+# Las respuestas grabadas de Binance tambien se verifican por SHA256.
+tests/live/respuestas/** -text

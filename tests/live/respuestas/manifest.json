@@ -1,0 +1,21 @@
+{
+  "script": "scripts/grabar_respuestas_binance.py",
+  "symbol": "BTCUSDT",
+  "files": {
+    "depth.json": {
+      "url": "https://data-api.binance.vision/api/v3/depth?symbol=BTCUSDT&limit=1000",
+      "received_at_utc": "2026-10-17T17:17:09.724Z",
+      "sha256": "b7f165e2734baa8df6a5057a95ebc1cf90f804144fba5876fa1fbb255dc5117e"
+    },
+    "klines_1d.json": {
+      "url": "https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30",
+      "received_at_utc": "2026-10-17T17:17:10.531Z",
+      "sha256": "af71e78a1f8f37ecd424193b101f049a87ac113b16c1560fbae7a5290f88ba86"
+    },
+    "exchange_info.json": {
+      "url": "https://data-api.binance.vision/api/v3/exchangeInfo?symbol=BTCUSDT",
+      "received_at_utc": "2026-10-17T17:17:11.322Z",
+      "sha256": "3523e03ac58caaf960732c44363ea21d81e683d922b9e8235e117a8aa232ebbb"
+    }
+  }
+}
