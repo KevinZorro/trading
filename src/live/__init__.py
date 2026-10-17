@@ -10,11 +10,23 @@ ordenes pasa por :func:`live.guard.assert_testnet_order_url`.
 from live.config import ConfigError, ShadowConfig
 from live.guard import MainnetOrderError, assert_testnet_order_url
 from live.logs import JsonFormatter, configure_json_logging
+from live.marketdata import (
+    BinanceRestMarketData,
+    BookSnapshot,
+    InvalidBookError,
+    MarketData,
+    MarketDataError,
+)
 
 __all__ = [
+    "BinanceRestMarketData",
+    "BookSnapshot",
     "ConfigError",
+    "InvalidBookError",
     "JsonFormatter",
     "MainnetOrderError",
+    "MarketData",
+    "MarketDataError",
     "ShadowConfig",
     "assert_testnet_order_url",
     "configure_json_logging",
