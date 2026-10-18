@@ -50,3 +50,5 @@ data/interim/
 # Artefacto completo de la Tarea C3: va al GitHub Release, no al repo. Se
 # commitean SEAL.json, summary.json y el manifest con su SHA256.
 results/c3/records.jsonl
+.claude/settings.local.json
+CLAUDE.local.md
