@@ -1,0 +1,42 @@
+# Sombra de costos + watchdog (ADR 0007, PR 6). Guia: docs/despliegue-sombra.md
+#
+# Los secretos viven en `.env` junto a este archivo, solo en el servidor (esta en
+# .gitignore). Los datos viven en el host, fuera del contenedor.
+x-comun: &comun
+  build:
+    context: .
+    args:
+      GIT_SHA: ${GIT_SHA:-unknown}
+  image: shadow:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    SHADOW_DATA_DIR: /data
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+services:
+  shadow:
+    <<: *comun
+    command: ["python", "-m", "live.shadow"]
+    volumes:
+      - ${SHADOW_HOST_DATA:-/var/lib/shadow}:/data
+    # Si el heartbeat se atrasa, Docker lo marca unhealthy y el watchdog avisa. El
+    # reinicio de un proceso colgado lo hace el propio proceso (live.stall).
+    healthcheck:
+      test: ["CMD", "python", "-m", "live.health"]
+      interval: 5m
+      timeout: 20s
+      start_period: 2m
+      retries: 1
+
+  # Contenedor aparte y con los datos en solo lectura: un proceso colgado no puede
+  # vigilarse a si mismo. No monta el socket de Docker.
+  watchdog:
+    <<: *comun
+    command: ["python", "-m", "live.watchdog"]
+    volumes:
+      - ${SHADOW_HOST_DATA:-/var/lib/shadow}:/data:ro

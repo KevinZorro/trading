@@ -38,6 +38,8 @@ class ShadowConfig:
     market_data_url: str = MARKET_DATA_URL
     telegram_chat_id: str = ""
     telegram_token: str = field(default="", repr=False)
+    # URL de ping (healthchecks.io): lleva un UUID que funciona como secreto.
+    deadman_url: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         if not self.order_sizes_usdt or min(self.order_sizes_usdt) <= 0:
@@ -54,6 +56,8 @@ class ShadowConfig:
             )
         if not self.market_data_url.startswith("https://"):
             raise ConfigError("market_data_url debe ser https")
+        if self.deadman_url and not self.deadman_url.startswith("https://"):
+            raise ConfigError("SHADOW_DEADMAN_URL debe ser https")
         if bool(self.telegram_token) != bool(self.telegram_chat_id):
             raise ConfigError(
                 "SHADOW_TELEGRAM_TOKEN y SHADOW_TELEGRAM_CHAT_ID van juntos: con uno "
@@ -63,6 +67,10 @@ class ShadowConfig:
     @property
     def alerts_enabled(self) -> bool:
         return bool(self.telegram_token)
+
+    @property
+    def deadman_enabled(self) -> bool:
+        return bool(self.deadman_url)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str]) -> ShadowConfig:
@@ -96,6 +104,7 @@ class ShadowConfig:
             raise ConfigError(f"valor numerico invalido en el entorno: {exc}") from exc
         opciones["telegram_token"] = leer("TELEGRAM_TOKEN") or ""
         opciones["telegram_chat_id"] = leer("TELEGRAM_CHAT_ID") or ""
+        opciones["deadman_url"] = leer("DEADMAN_URL") or ""
         return cls(**opciones)  # type: ignore[arg-type]
 
     def describe(self) -> dict[str, object]:
@@ -110,4 +119,5 @@ class ShadowConfig:
             "heartbeat_max_age_minutes": self.heartbeat_max_age_minutes,
             "market_data_url": self.market_data_url,
             "alerts_enabled": self.alerts_enabled,
+            "deadman_enabled": self.deadman_enabled,
         }
