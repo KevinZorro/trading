@@ -169,6 +169,7 @@ def test_barra_vieja_se_rechaza(tmp_path: Path) -> None:
         paso.run()
 
 
+@pytest.mark.leakage
 def test_la_barra_en_curso_no_cambia_la_observacion(tmp_path: Path) -> None:
     """Anti-leakage: lo que el venue publica de la vela abierta no entra."""
     m1 = Modelo(1.0)
