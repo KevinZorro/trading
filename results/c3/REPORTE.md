@@ -113,3 +113,25 @@ sobre órdenes reales (sin residuo) cae entre dos extremos:
 El 35 % extrapola una sola muestra in-sample (un fold, una semilla) a 110 pares fuera
 de muestra. **Es una cota a verificar, no una medición.** La primera corrida con el
 conteo por motivo lo mide.
+
+## Adenda 2026-10-17: min_notional medido
+
+- **Dato.** El filtro `NOTIONAL` vigente de BTCUSDT es `minNotional = 5` USDT
+  (`applyMinToMarket = true`). C3 corrió con 10 USDT, el default de
+  `binance_spot_spec` (y lo que da el ADR 0006, sección 1.1).
+- **Fuente.** `tests/live/respuestas/exchange_info.json`, recibido el 2026-10-17
+  17:17:11Z de `data-api.binance.vision`. SHA256 registrado en
+  `tests/live/respuestas/manifest.json`:
+  `3523e03ac58caaf960732c44363ea21d81e683d922b9e8235e117a8aa232ebbb`.
+- **Alcance.** Es **un solo snapshot**. No se sabe desde cuándo rige 5 USDT ni qué
+  valor tenía durante 2020-2026; esta adenda no afirma nada sobre la historia del
+  filtro.
+- **Magnitud.** Con 100 USDT de equity, el umbral de rechazo de un cambio de
+  exposición baja de 10 % a 5 % (`min_notional / equity`). Las tasas de rechazo por
+  `MIN_NOTIONAL` de la sección anterior (17,6 % piso; ≈ 35 % y ≈ 41 % estimadas)
+  corresponden al umbral de 10 %, no al vigente.
+- **Dirección del efecto sobre el veredicto: indeterminada.** Con 5 USDT habría
+  menos rechazos, es decir, más órdenes ejecutadas y más costos pagados. Si eso
+  ayuda o perjudica al agente frente a buy-and-hold no se puede decir sin re-correr.
+- **C3 no se re-corre** (el test se toca una vez) y el veredicto **NO SUPERA** queda
+  como está. Lo medido aplica a lo posterior: ver `docs/adr/0008`.

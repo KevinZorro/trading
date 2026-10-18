@@ -195,6 +195,11 @@ def binance_spot_spec(
     10 bps sin descuentos. Los filtros reales cambian por par y en el tiempo;
     para el experimento final se cargan del snapshot de ``exchangeInfo``
     vigente en cada fecha.
+
+    El ``exchangeInfo`` real grabado el 2026-10-17 da NOTIONAL 5 USDT, no 10. El
+    default 10 se conserva: es el valor con que corrio C3 y cambiarlo rompe su
+    reproducibilidad. Lo que opere contra el venue toma el spec de
+    ``MarketData.instrument()`` (ADR 0008).
     """
     return InstrumentSpec(
         symbol=symbol,
