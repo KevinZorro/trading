@@ -55,14 +55,14 @@ fix() {   # reescribe solo commits sin publicar y lineales
   fi
   oldest="$(printf '%s\n' "$commits" | tail -n 1)"
   if git rev-parse -q --verify "$oldest^" >/dev/null; then base="$oldest^"; else base="--root"; fi
-  copy="$(git rev-parse --git-dir)/git-guard-fix.sh"; cp "$SELF" "$copy"   # el script puede no existir en commits viejos
+  copy="$(git rev-parse --absolute-git-dir)/git-guard-fix.sh"; cp "$SELF" "$copy"   # el script puede no existir en commits viejos
   git rebase --autostash --exec "bash \"$copy\" amend-one" "$base"
 }
 
 amend_one() {
-  local m; m="$(git rev-parse --git-dir)/GIT_GUARD_MSG"
+  local m; m="$(git rev-parse --absolute-git-dir)/GIT_GUARD_MSG"
   git log -1 --format=%B | grep -vE "$AI_RE" > "$m"
-  git commit --amend --no-verify --no-gpg-sign --reset-author -q -F "$m" && rm -f "$m"
+  git commit --amend --allow-empty --no-verify --no-gpg-sign --reset-author -q -F "$m" && rm -f "$m"
 }
 
 case "${1:-setup}" in
