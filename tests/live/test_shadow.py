@@ -149,3 +149,17 @@ def test_sin_adr_no_arranca(tmp_path: Path) -> None:
             fetch=Servidor(),
             adr_path=tmp_path / "no_existe.md",
         )
+
+
+def test_cada_heartbeat_avisa_progreso(tmp_path: Path) -> None:
+    llamadas: list[int] = []
+    reloj = SimulatedClock(t("2026-10-17T17:30:00"))
+    runner = build_runner(
+        ShadowConfig(data_dir=tmp_path),
+        reloj,
+        sleep=lambda s: None,
+        fetch=Servidor(),
+        on_progress=lambda: llamadas.append(1),
+    )
+    runner.step(Due(t("2026-10-17T17:30:00"), "periodic"))
+    assert llamadas == [1]
