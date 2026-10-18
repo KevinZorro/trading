@@ -1,4 +1,4 @@
-"""Invariantes del despliegue, leidas del texto de los archivos (sin Docker, sin red)."""
+"""Invariantes del despliegue, leidas del texto de los archivos (sin Docker)."""
 
 from __future__ import annotations
 
