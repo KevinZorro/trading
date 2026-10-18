@@ -8,6 +8,7 @@ ordenes pasa por :func:`live.guard.assert_testnet_order_url`.
 """
 
 from live.config import ConfigError, ShadowConfig
+from live.fillstore import FillStore, venue_header
 from live.guard import MainnetOrderError, assert_testnet_order_url
 from live.logs import JsonFormatter, configure_json_logging
 from live.marketdata import (
@@ -20,12 +21,14 @@ from live.marketdata import (
 from live.schedule import Due, next_due
 from live.shadow import ShadowRunner, SnapshotRecord, build_runner
 from live.store import SnapshotStore, StoreError
+from live.venue import ShadowVenue, ShadowVenueError
 
 __all__ = [
     "BinanceRestMarketData",
     "BookSnapshot",
     "ConfigError",
     "Due",
+    "FillStore",
     "InvalidBookError",
     "JsonFormatter",
     "MainnetOrderError",
@@ -33,6 +36,8 @@ __all__ = [
     "MarketDataError",
     "ShadowConfig",
     "ShadowRunner",
+    "ShadowVenue",
+    "ShadowVenueError",
     "SnapshotRecord",
     "SnapshotStore",
     "StoreError",
@@ -40,4 +45,5 @@ __all__ = [
     "build_runner",
     "configure_json_logging",
     "next_due",
+    "venue_header",
 ]
