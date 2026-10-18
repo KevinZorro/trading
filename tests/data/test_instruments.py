@@ -146,3 +146,10 @@ class TestSpecInvalida:
             CommissionSchema(kind="porcentual")  # type: ignore[arg-type]
         with pytest.raises(ValueError, match="value de comision no puede ser"):
             CommissionSchema(kind="percent", value=-0.1)
+
+
+def test_default_historico_de_min_notional_binance() -> None:
+    # Fija el 10 con que corrio C3. El exchangeInfo real dice 5 (2026-10-17), pero
+    # cambiar el default rompe la reproducibilidad: el spec vigente se carga de
+    # MarketData.instrument() (docs/adr/0008-instrument-spec-desde-exchangeinfo.md).
+    assert binance_spot_spec().min_notional == 10.0
