@@ -36,6 +36,7 @@ from live.logs import configure_json_logging
 from live.marketdata import BookSnapshot, MarketData, MarketDataError
 from live.schedule import Due, next_due
 from live.shadow_cost import ShadowCostError, Side, cost_ratios, model_cost, walk_book
+from live.stall import StallGuard, exit_process
 from live.store import SnapshotStore, file_sha256
 from sim.clock import Clock, SystemClock
 from sim.costs import SlippageModel, SpreadModel
@@ -85,7 +86,9 @@ class ShadowRunner:
         spread: SpreadModel,
         slippage: SlippageModel,
         sleep: Callable[[float], object],
+        on_progress: Callable[[], object] = lambda: None,
     ) -> None:
+        self._on_progress = on_progress
         self._config = config
         self._market = market
         self._clock = clock
@@ -210,6 +213,7 @@ class ShadowRunner:
         return registro
 
     def _heartbeat(self, last: str | None) -> None:
+        self._on_progress()
         self._store.write_heartbeat(
             {
                 "at": iso(self._clock.now()),
@@ -239,6 +243,7 @@ def build_runner(
     fetch: Callable[[str], bytes] | None = None,
     adr_path: Path = ADR_PATH,
     git_sha: str = "unknown",
+    on_progress: Callable[[], object] = lambda: None,
 ) -> ShadowRunner:
     from live.marketdata import BinanceRestMarketData
 
@@ -263,6 +268,7 @@ def build_runner(
         spread=sim.spread,
         slippage=sim.slippage,
         sleep=sleep,
+        on_progress=on_progress,
     )
 
 
@@ -272,11 +278,20 @@ def main(environ: Mapping[str, str]) -> int:  # pragma: no cover - proceso real
     parar = threading.Event()
     for senal in (signal.SIGTERM, signal.SIGINT):
         signal.signal(senal, lambda *_: parar.set())
+    reloj = SystemClock()
+    # Un cuelgue no termina el proceso y Docker no lo reinicia: se mata solo.
+    guarda = StallGuard(
+        reloj,
+        np.timedelta64(2 * config.snapshot_minutes + 5, "m"),  # dos pasos y margen
+        exit_process,
+    )
+    guarda.start(parar)
     runner = build_runner(
         config,
-        SystemClock(),
+        reloj,
         sleep=parar.wait,  # despierta al instante con SIGTERM
         git_sha=environ.get("SHADOW_GIT_SHA", "unknown"),
+        on_progress=guarda.touch,
     )
     runner.run(parar.is_set)
     return 0

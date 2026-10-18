@@ -162,6 +162,7 @@ versionado.**
 | `SHADOW_TELEGRAM_CHAT_ID` | vacío | |
 
 Sin las dos variables de Telegram la sombra corre igual, pero sin alertas.
+Despliegue en VPS con Docker, watchdog y NTP: `docs/despliegue-sombra.md`.
 
 ### Crear el bot de Telegram para las alertas
 
