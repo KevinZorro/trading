@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 
 import numpy as np
 
-from live.alerts import Notifier, build_notifier
+from live.alerts import DeadmanPing, Notifier, build_deadman, build_notifier
 from live.config import ShadowConfig
 from live.health import Health, check
 from live.logs import configure_json_logging
@@ -38,7 +38,9 @@ class Watchdog:
         notifier: Notifier,
         *,
         sleep: Callable[[float], object],
+        deadman: DeadmanPing | None = None,
     ) -> None:
+        self._deadman = deadman
         self._config = config
         self._clock = clock
         self._notifier = notifier
@@ -49,6 +51,8 @@ class Watchdog:
     def step(self) -> Health:
         ahora = self._clock.now()
         salud = check(self._config.data_dir, ahora, self._config)
+        if salud.ok and self._deadman is not None:
+            self._deadman.ping()  # solo si todo esta sano: la ausencia es la senal
         if salud.ok:
             if self._motivos and self._notifier.send(
                 "Sombra recuperada: heartbeat sano."
@@ -77,9 +81,13 @@ def main(environ: Mapping[str, str]) -> int:  # pragma: no cover - proceso real
     parar = threading.Event()
     for senal in (signal.SIGTERM, signal.SIGINT):
         signal.signal(senal, lambda *_: parar.set())
-    Watchdog(config, SystemClock(), build_notifier(config), sleep=parar.wait).run(
-        parar.is_set
-    )
+    Watchdog(
+        config,
+        SystemClock(),
+        build_notifier(config),
+        sleep=parar.wait,
+        deadman=build_deadman(config),
+    ).run(parar.is_set)
     return 0
 
 

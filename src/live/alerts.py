@@ -22,6 +22,7 @@ TELEGRAM_HOST = "https://api.telegram.org"
 TIMEOUT_S = 10.0
 
 Post = Callable[[str, bytes], None]
+Get = Callable[[str], None]
 
 
 class Notifier(Protocol):
@@ -33,6 +34,11 @@ def _post_http(url: str, cuerpo: bytes) -> None:  # pragma: no cover - red real
         url, data=cuerpo, headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(pedido, timeout=TIMEOUT_S):
+        pass
+
+
+def _get_http(url: str) -> None:  # pragma: no cover - red real
+    with urllib.request.urlopen(url, timeout=TIMEOUT_S):
         pass
 
 
@@ -64,3 +70,28 @@ def build_notifier(config: ShadowConfig, post: Post = _post_http) -> Notifier:
     if config.alerts_enabled:
         return TelegramNotifier(config.telegram_token, config.telegram_chat_id, post)
     return LogNotifier()
+
+
+class DeadmanPing:
+    """Ping periodico a un servicio externo (healthchecks.io) cuando todo esta sano.
+
+    Cubre lo que Telegram no puede: si el VPS entero cae, el watchdog cae con el y
+    los pings dejan de llegar; el servicio externo avisa de la ausencia. La URL
+    lleva un UUID que funciona como secreto: no se loguea.
+    """
+
+    def __init__(self, url: str, get: Get = _get_http) -> None:
+        self._url = url
+        self._get = get
+
+    def ping(self) -> bool:
+        try:
+            self._get(self._url)
+        except Exception as exc:  # cualquier fallo de red es "no salio"
+            log.error("ping externo no enviado", extra={"error": type(exc).__name__})
+            return False
+        return True
+
+
+def build_deadman(config: ShadowConfig, get: Get = _get_http) -> DeadmanPing | None:
+    return DeadmanPing(config.deadman_url, get) if config.deadman_enabled else None

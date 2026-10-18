@@ -160,6 +160,7 @@ versionado.**
 | `SHADOW_MARKET_DATA_URL` | `https://data-api.binance.vision` | Solo HTTPS |
 | `SHADOW_TELEGRAM_TOKEN` | vacío | Secreto. Va junto con el chat_id |
 | `SHADOW_TELEGRAM_CHAT_ID` | vacío | |
+| `SHADOW_DEADMAN_URL` | vacío | Secreto. Ping de healthchecks.io cuando todo está sano |
 
 Sin las dos variables de Telegram la sombra corre igual, pero sin alertas.
 Despliegue en VPS con Docker, watchdog y NTP: `docs/despliegue-sombra.md`.

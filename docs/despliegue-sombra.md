@@ -109,6 +109,28 @@ ventana de 30 días, no durante).
   cabecera diaria.
 - **Copia de seguridad** desde tu PC, una vez al día:
   `rsync -a root@IP_DEL_VPS:/var/lib/shadow/ ./sombra-datos/`
-- **Lo que este despliegue no cubre**: si el servidor entero cae, el watchdog cae con
-  él y Telegram no avisa. Revisa el estado de Telegram al menos una vez al día: la
-  ausencia del recordatorio no es una señal.
+- **Si el servidor entero cae**, el watchdog cae con él y Telegram no avisa. Para eso
+  existe el ping externo (sección siguiente): cuando faltan pings, avisa un servicio de
+  fuera del VPS.
+
+## 6. Aviso externo si cae el VPS (healthchecks.io; lo haces tú)
+
+El watchdog hace un `GET` a `SHADOW_DEADMAN_URL` en cada ciclo de 5 minutos **solo si
+todo está sano**. Si el VPS se apaga, o el heartbeat se atrasa, los pings se detienen y
+healthchecks.io te avisa.
+
+1. Crea una cuenta gratis en <https://healthchecks.io>.
+2. **Add Check**, nombre `sombra-btcusdt`.
+3. **Period: 5 minutes. Grace Time: 15 minutes.** (el watchdog pinguea cada 5 min; los
+   15 de gracia toleran un ciclo perdido sin falsas alarmas).
+4. En **Integrations** conecta el canal por el que quieres enterarte (correo o Telegram).
+5. Copia la **Ping URL** (`https://hc-ping.com/<uuid>`). Es un secreto: quien la tenga
+   puede marcar el check como sano.
+6. En el servidor:
+   ```bash
+   cd /opt/trading
+   nano .env      # SHADOW_DEADMAN_URL=https://hc-ping.com/<uuid>
+   docker compose up -d watchdog
+   ```
+7. En healthchecks.io el check pasa a **Up** en unos 5 minutos. Para probarlo:
+   `docker compose stop watchdog` y a los ~20 minutos debe llegar el aviso.

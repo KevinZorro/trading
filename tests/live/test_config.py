@@ -92,3 +92,16 @@ def test_los_logs_son_json_por_linea_y_redactan_secretos() -> None:
     assert lineas[0]["level"] == "INFO"
     assert "fallo de prueba" in lineas[1]["exc"]
     logging.getLogger("live").handlers.clear()
+
+
+def test_deadman_url_es_opcional_https_y_no_se_filtra() -> None:
+    url = "https://hc-ping.com/UUID-SECRETO"
+    config = ShadowConfig.from_env({"SHADOW_DATA_DIR": "/d", "SHADOW_DEADMAN_URL": url})
+    assert config.deadman_enabled
+    assert url not in repr(config)
+    assert url not in json.dumps(config.describe())
+    assert not ShadowConfig.from_env({"SHADOW_DATA_DIR": "/d"}).deadman_enabled
+    with pytest.raises(ConfigError, match="SHADOW_DEADMAN_URL debe ser https"):
+        ShadowConfig.from_env(
+            {"SHADOW_DATA_DIR": "/d", "SHADOW_DEADMAN_URL": "http://x/u"}
+        )

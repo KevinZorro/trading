@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from live.alerts import DeadmanPing
 from live.config import ShadowConfig
 from live.stall import StallGuard
 from live.watchdog import CICLO_S, Watchdog
@@ -104,3 +105,21 @@ def test_stall_guard_dispara_solo_pasado_el_plazo_y_touch_lo_reinicia() -> None:
     reloj.advance_to(t("2026-10-18T13:11:00"))
     assert g.check()
     assert muertes == [1]
+
+
+def test_deadman_pinguea_solo_cuando_todo_esta_sano(tmp_path: Path) -> None:
+    pings: list[str] = []
+    reloj = SimulatedClock(t("2026-10-18T00:05:00"))
+    w = Watchdog(
+        ShadowConfig(data_dir=tmp_path),
+        reloj,
+        Captura(),
+        sleep=lambda s: None,
+        deadman=DeadmanPing("https://hc-ping.com/u", pings.append),
+    )
+    latido(tmp_path, "2026-10-18T00:00:00.000Z")
+    w.step()
+    assert pings == ["https://hc-ping.com/u"]
+    reloj.advance_to(t("2026-10-18T00:50:00"))  # heartbeat de 50 min: no sano
+    w.step()
+    assert len(pings) == 1
