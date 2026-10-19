@@ -317,10 +317,20 @@ class BinanceTestnetVenue:
             raise TestnetVenueError(f"estado {estado!r} no interpretable")
         precio = float(r["cummulativeQuoteQty"]) / ejecutado
         signo = 1.0 if r["side"] == "BUY" else -1.0
-        # ASSUMPTION: una orden recuperada por consulta no trae fills[] y pierde
-        # la comision (0 en testnet); myTrades la traeria y queda para el PR 8.
-        comision = sum(self._commission(f, precio) for f in r.get("fills", []))
+        # Una orden recuperada por consulta no trae fills[]: la comision sale de
+        # myTrades, que es lo que el venue cobro (0 en testnet).
+        trades = r["fills"] if "fills" in r else self._trades_de(int(r["orderId"]))
+        comision = sum(self._commission(f, precio) for f in trades)
         return self._build(intent, status, signo * ejecutado, precio, comision, t_fill)
+
+    def _trades_de(self, order_id: int) -> list[Mapping[str, Any]]:
+        trades = self._client.call(
+            "GET",
+            "/api/v3/myTrades",
+            {"symbol": self._instrument.symbol, "orderId": order_id},
+        )
+        assert isinstance(trades, list)
+        return trades
 
     def _commission(self, fill: Mapping[str, Any], precio: float) -> float:
         monto = float(fill["commission"])

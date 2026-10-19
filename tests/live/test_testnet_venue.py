@@ -79,6 +79,7 @@ POST = "POST__/api/v3/order"
 GET = "GET__/api/v3/order"
 CUENTA = "GET__/api/v3/account"
 ABIERTAS = "GET__/api/v3/openOrders"
+MIS_TRADES = "GET__/api/v3/myTrades"
 
 
 def venue(tmp_path: Path, servidor: Servidor) -> BinanceTestnetVenue:
@@ -172,7 +173,11 @@ def test_id_repetido_tras_reiniciar_no_toca_la_red(tmp_path: Path) -> None:
 
 def test_timeout_consulta_y_adopta_sin_reenviar(tmp_path: Path) -> None:
     s = Servidor(
-        **{POST: [TransportError("t")], GET: [ok(grabacion("order_query.json"))]}
+        **{
+            POST: [TransportError("t")],
+            GET: [ok(grabacion("order_query.json"))],
+            MIS_TRADES: [ok(grabacion("my_trades.json"))],
+        }
     )
     v = venue(tmp_path, s)
     v.submit_order(compra())
@@ -181,6 +186,23 @@ def test_timeout_consulta_y_adopta_sin_reenviar(tmp_path: Path) -> None:
     assert f.fill_price == pytest.approx(82644.59)
     assert s.llamadas("POST", ORDER) == 1
     assert "origClientOrderId=rec7a-buy-1792379461" in s.pedidos[1].url
+    assert "orderId=4516876" in s.pedidos[2].url
+
+
+def test_orden_recuperada_toma_la_comision_de_my_trades(tmp_path: Path) -> None:
+    trades = grabacion("my_trades.json")
+    trades[0]["commission"] = "0.00000100"  # BTC; la grabada vale 0 en testnet
+    s = Servidor(
+        **{
+            POST: [TransportError("t")],
+            GET: [ok(grabacion("order_query.json"))],
+            MIS_TRADES: [ok(trades)],
+        }
+    )
+    v = venue(tmp_path, s)
+    v.submit_order(compra())
+    (f,) = v.get_fills()
+    assert f.commission == pytest.approx(0.000001 * 82644.59)  # BTC a USDT
 
 
 def test_timeout_con_orden_inexistente_reenvia_una_vez(tmp_path: Path) -> None:
@@ -213,6 +235,7 @@ def test_reconcile_adopta_la_orden_pendiente_tras_reiniciar(tmp_path: Path) -> N
     s = Servidor(
         **{
             GET: [ok(grabacion("order_query.json"))],
+            MIS_TRADES: [ok(grabacion("my_trades.json"))],
             CUENTA: [ok(grabacion("account_despues.json"))],
             ABIERTAS: [ok(grabacion("open_orders.json"))],
         }
