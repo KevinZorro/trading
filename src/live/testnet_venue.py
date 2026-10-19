@@ -12,9 +12,13 @@ La idempotencia es entonces nuestra:
 2. antes del POST se guarda un ``intent`` con append + fsync (write-ahead);
 3. ante un timeout se consulta por ``origClientOrderId`` antes de reenviar.
 
-Fail-closed: cualquier ``BinanceApiError`` no cubierto por una grabacion se
-propaga y detiene el proceso. No hay metodo publico fuera del protocolo: el fill
-de una orden de mercado viaja en la respuesta del POST.
+Los rechazos de ejecucion que el venue grabo (``_RECHAZOS``: filtros ``-1013`` y
+fondos ``-2010``) son un ``Fill`` REJECTED con motivo, como en el simulador: el
+acuse ya se dio en la admision. Los demas errores son fail-closed: cualquier
+``BinanceApiError`` no cubierto por una grabacion (``-1022``, firma invalida, es
+credencial o reloj, no una orden) se propaga y detiene el proceso. No hay metodo
+publico fuera del protocolo: el fill de una orden de mercado viaja en la
+respuesta del POST.
 """
 
 from __future__ import annotations
@@ -37,6 +41,13 @@ from sim.venue import CancelAck, OrderAck, VenueState
 _ID_VALIDO = re.compile(r"^[a-zA-Z0-9\-_]{1,36}$")
 _ORDEN_INEXISTENTE = -2013
 _CANCELAR_INEXISTENTE = -2011
+
+# Rechazos de ejecucion grabados en #42 (err_filtro_*, err_saldo_*). El codigo
+# solo no alcanza: -1013 y -2010 cubren otros filtros y mensajes sin grabar, que
+# siguen propagandose. El motivo de fondos depende del lado de la orden.
+_FILTRO_LOT_SIZE = (-1013, "Filter failure: LOT_SIZE")
+_FILTRO_NOTIONAL = (-1013, "Filter failure: NOTIONAL")
+_SIN_SALDO = (-2010, "Account has insufficient balance for requested action.")
 
 
 class TestnetVenueError(RuntimeError):
@@ -217,6 +228,10 @@ class BinanceTestnetVenue:
         try:
             respuesta = self._client.call("POST", "/api/v3/order", self._params(intent))
         except BinanceApiError as exc:
+            motivo = self._motivo_de(exc, intent)
+            if motivo is not None:
+                self._record(self._rejected(intent, motivo))
+                return
             # El venue respondio con error: no hay orden. Se deja constancia para
             # que reconcile no la reenvie, y se detiene (fail-closed).
             self._store.append(
@@ -231,6 +246,23 @@ class BinanceTestnetVenue:
             self._unresolved.pop(intent.order.client_order_id, None)
             raise
         self._record(self._fill_from(intent, respuesta))
+
+    @staticmethod
+    def _motivo_de(exc: BinanceApiError, intent: _Intent) -> RejectReason | None:
+        """Motivo de rechazo de ejecucion, o ``None`` si el error no se conoce."""
+        error = (exc.code, exc.msg)
+        if error == _FILTRO_LOT_SIZE:
+            return RejectReason.MIN_QTY
+        if error == _FILTRO_NOTIONAL:
+            return RejectReason.MIN_NOTIONAL
+        if error == _SIN_SALDO:
+            comprando = intent.qty > 0
+            return (
+                RejectReason.INSUFFICIENT_CASH
+                if comprando
+                else RejectReason.INSUFFICIENT_POSITION
+            )
+        return None
 
     def _query(self, intent: _Intent) -> bool:
         """Adopta el estado de la orden en el venue. ``False`` si no existe."""
