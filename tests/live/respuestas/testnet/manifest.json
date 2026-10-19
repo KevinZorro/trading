@@ -1,0 +1,163 @@
+{
+  "script": "scripts/grabar_respuestas_testnet.py",
+  "base_url": "https://testnet.binance.vision",
+  "symbol": "BTCUSDT",
+  "files": {
+    "time.json": {
+      "method": "GET",
+      "path": "/api/v3/time",
+      "params": {},
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:01.905Z",
+      "sha256": "7aed7dd2d813e3bac775f36827fd96c73ff5eb024a1d0804ed1668ef96bc4168"
+    },
+    "exchange_info.json": {
+      "method": "GET",
+      "path": "/api/v3/exchangeInfo",
+      "params": {
+        "symbol": "BTCUSDT"
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:02.192Z",
+      "sha256": "0185583ce9a6667a8aa923880c189310c0e212b3703a173bd8dc2cd2d4bff5aa"
+    },
+    "account_antes.json": {
+      "method": "GET",
+      "path": "/api/v3/account",
+      "params": {},
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:02.508Z",
+      "sha256": "169faad24b11ac41bbb12d014ec258e0891202301be98525cd71cbc706321699"
+    },
+    "order_buy.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": "0.001",
+        "newClientOrderId": "rec7a-buy-1792379461",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:02.973Z",
+      "sha256": "12c3278280227950c6b78933c8419259b39e89a026f8952d25bb6fcb8d512d29"
+    },
+    "order_query.json": {
+      "method": "GET",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "origClientOrderId": "rec7a-buy-1792379461"
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:03.253Z",
+      "sha256": "7b0129dc187df74bfd6f477d77f3ead6398f86e1d9f20a62af3e34f6d8ece61f"
+    },
+    "order_buy_duplicado.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": "0.001",
+        "newClientOrderId": "rec7a-buy-1792379461",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:03.542Z",
+      "sha256": "e4d8c84345b1f8f576d42857e46b8f7a3a66ab32fe75eb6eebb8fe94932c51cd"
+    },
+    "open_orders.json": {
+      "method": "GET",
+      "path": "/api/v3/openOrders",
+      "params": {
+        "symbol": "BTCUSDT"
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:03.836Z",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "my_trades.json": {
+      "method": "GET",
+      "path": "/api/v3/myTrades",
+      "params": {
+        "symbol": "BTCUSDT",
+        "limit": 10
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:04.123Z",
+      "sha256": "3f1ec5992a7449c68e8670189fbf1047b964e6d2b0e940b5f4a1083d97f58ae2"
+    },
+    "order_sell.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "SELL",
+        "type": "MARKET",
+        "quantity": "0.001",
+        "newClientOrderId": "rec7a-sell-1792379461",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:04.399Z",
+      "sha256": "ae3fdc8f10086fb8290c12d51732bb0e280bc019dcae5ebc83ccaf4e4c782253"
+    },
+    "account_despues.json": {
+      "method": "GET",
+      "path": "/api/v3/account",
+      "params": {},
+      "http_status": 200,
+      "received_at_utc": "2026-10-19T03:11:04.894Z",
+      "sha256": "43b922ea65beaf36acf7810abf5764747cc0b8e4fb2a8f3186180b3e2aae5803"
+    },
+    "err_consulta_inexistente.json": {
+      "method": "GET",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "origClientOrderId": "no-existe-1792379461"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T03:11:05.162Z",
+      "sha256": "248048e828d1ad07958b12dd6781a1acf2ae13b3b47bbd0abc72acf6eb5adff9"
+    },
+    "err_cancelar_inexistente.json": {
+      "method": "DELETE",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "origClientOrderId": "no-existe-1792379461"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T03:11:05.420Z",
+      "sha256": "ec21e45fe49d887bea1d6a341254454634a5643d4f5b873a17fac0e1a0f748e4"
+    },
+    "err_id_invalido.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": "0.001",
+        "newClientOrderId": "id con espacios!",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T03:11:05.704Z",
+      "sha256": "bfa0e7802e024c6adfdf2abc9ae5c8a1de64030d9a65e39139d9c24a5a9f7926"
+    },
+    "err_firma_invalida.json": {
+      "method": "GET",
+      "path": "/api/v3/account",
+      "params": {},
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T03:11:05.986Z",
+      "sha256": "2328e452d1e7f1c918bb817e61a898fe2bd0572196e12df53f92b23d9dc2f3c7"
+    }
+  }
+}
