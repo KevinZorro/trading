@@ -40,6 +40,25 @@ def _cargar() -> ModuleType:
     return modulo
 
 
+NUEVOS = (
+    "err_filtro_lot_size",
+    "err_filtro_notional",
+    "err_saldo_compra",
+    "err_saldo_venta",
+    "err_firma_invalida",
+)
+
+
+def _quitar_errores(destino: Path) -> None:
+    """Deja el directorio como antes de grabar los errores, para que el test no
+    dependa de que ya esten grabados."""
+    manifest = json.loads((destino / "manifest.json").read_text())
+    for nombre in NUEVOS:
+        (destino / f"{nombre}.json").unlink(missing_ok=True)
+        manifest["files"].pop(f"{nombre}.json", None)
+    (destino / "manifest.json").write_text(json.dumps(manifest))
+
+
 def _json(nombre: str) -> dict[str, object]:
     datos: dict[str, object] = json.loads((GRABADAS / nombre).read_text())
     return datos
@@ -104,6 +123,7 @@ def grabador(
         modulo = _cargar()
         destino = tmp_path / "respuestas"
         shutil.copytree(GRABADAS, destino)
+        _quitar_errores(destino)
         servidor = Servidor(codigos)
         monkeypatch.setattr(modulo, "DESTINO", destino)
         monkeypatch.setattr(modulo, "RAIZ", tmp_path)
@@ -139,12 +159,12 @@ def test_solo_errores_suma_al_manifest_sin_tocar_lo_demas(
         "err_saldo_venta.json",
     }
     despues = {p.name: p.read_bytes() for p in destino.glob("*.json")}
-    assert set(despues) - set(antes) == nuevos
-    intactos = set(antes) - {"manifest.json", "err_firma_invalida.json"}
+    assert set(despues) - set(antes) == nuevos | {"err_firma_invalida.json"}
+    intactos = set(antes) - {"manifest.json"}
     assert all(despues[n] == antes[n] for n in intactos)
     assert json.loads(despues["err_firma_invalida.json"]) == {"code": -1022}
     manifest = json.loads(despues["manifest.json"])["files"]
-    assert set(manifest) == set(previo) | nuevos
+    assert set(manifest) == set(previo) | nuevos | {"err_firma_invalida.json"}
     assert all(manifest[n] == previo[n] for n in intactos)
     assert manifest["err_saldo_venta.json"]["params"]["side"] == "SELL"
     assert manifest["err_firma_invalida.json"]["http_status"] == 401
