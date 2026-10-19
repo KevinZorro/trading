@@ -123,9 +123,9 @@ warn_unreachable = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-# El grupo `rl` es opcional y el CI no lo instala en el job de tipos: sin este
+# Los grupos `rl` y `ws` son opcionales y el CI no lo instala en el job de tipos: sin este
 # override, mypy fallaria por no encontrar el modulo en vez de por un error real.
-module = ["stable_baselines3.*", "sb3_contrib.*"]
+module = ["stable_baselines3.*", "sb3_contrib.*", "websockets.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
