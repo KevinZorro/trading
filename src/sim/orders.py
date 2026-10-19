@@ -48,6 +48,7 @@ class RejectReason(StrEnum):
     NO_VOLUME = "NO_VOLUME"
     # Rechazos de admision: ocurren al enviar, no al llenar.
     MISSING_CLIENT_ORDER_ID = "MISSING_CLIENT_ORDER_ID"
+    INVALID_CLIENT_ORDER_ID = "INVALID_CLIENT_ORDER_ID"
     VENUE_NOT_RUNNING = "VENUE_NOT_RUNNING"
 
     @classmethod
