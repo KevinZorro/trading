@@ -35,10 +35,23 @@ snapshot de costos se toma igual y el fallo queda en el log y en `heartbeat.json
 (por defecto `/var/lib/shadow-frozen`) con el `manifest.json` de
 `scripts/congelar_agente_a.py`.
 
-**Pendiente:** la imagen se construye con `uv sync --no-dev`, sin el grupo `rl`: no
-trae `stable-baselines3` ni `torch`, así que hoy los agentes fallan al cargar el modelo
-(y lo dicen en `agents.errors`). Instalar el grupo `rl` en la imagen (torch solo CPU)
-es un cambio de despliegue aparte.
+La imagen instala el grupo `rl` con torch **solo CPU** (unos 670 MB comprimidos; las
+ruedas CUDA de `uv.lock` pesarían varios GB y no sirven sin GPU). El `Dockerfile` toma
+de `uv.lock` todo menos torch y sus dependencias CUDA, y pone la misma versión de torch
+desde el índice CPU de PyTorch; `uv.lock` no cambia. Se verificó cargando con
+`FrozenPolicy` el `model.zip` de las semillas de `frozen/agente_a` dentro de la imagen.
+
+Para copiar los pesos al VPS, **desde PowerShell en tu PC**, en la raíz del repo
+(reemplaza `IP_DEL_VPS`):
+
+```powershell
+ssh root@IP_DEL_VPS "install -d -m 755 /var/lib/shadow-frozen"
+scp -r frozen\agente_a\* root@IP_DEL_VPS:/var/lib/shadow-frozen/
+```
+
+El contenedor corre como uid 10001 y monta esa carpeta de solo lectura: los archivos
+deben ser legibles por todos (`chmod -R a+rX /var/lib/shadow-frozen` en el VPS). Luego
+`docker compose up -d --build` y revisa que `heartbeat.json` no traiga `agents.errors`.
 
 ## 1. Servidor (lo haces tú)
 
