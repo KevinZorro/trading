@@ -2,7 +2,8 @@
 
 Ningun test inventa una respuesta de Binance: los casos que no tienen grabacion
 (parcial, vencida, comision en otra moneda) se derivan modificando campos de una
-real, y lo que ninguna grabacion cubre (-1013, -2010) no se testea: se propaga.
+real. Los rechazos -1013 y -2010 se mapean a un Fill REJECTED con las grabaciones
+de #42; lo que ninguna grabacion cubre (-1022 al enviar, -1100) se propaga.
 """
 
 from __future__ import annotations
@@ -420,3 +421,69 @@ def test_get_fills_desde_un_indice(tmp_path: Path) -> None:
     assert v.get_fills(2) == []
     with pytest.raises(ValueError, match="negativo"):
         v.get_fills(-1)
+
+
+@pytest.mark.parametrize(
+    ("grabada", "qty", "motivo"),
+    [
+        ("err_filtro_lot_size.json", 0.001, RejectReason.MIN_QTY),
+        ("err_filtro_notional.json", 0.001, RejectReason.MIN_NOTIONAL),
+        ("err_saldo_compra.json", 0.001, RejectReason.INSUFFICIENT_CASH),
+        ("err_saldo_venta.json", -0.001, RejectReason.INSUFFICIENT_POSITION),
+    ],
+)
+def test_rechazo_grabado_es_un_fill_rejected_con_motivo(
+    tmp_path: Path, grabada: str, qty: float, motivo: RejectReason
+) -> None:
+    s = Servidor(**{POST: [error(grabada)]})
+    v = venue(tmp_path, s)
+    assert v.submit_order(compra(qty=qty)).accepted  # el acuse es de admision
+    (f,) = v.get_fills()
+    assert f.status is OrderStatus.REJECTED
+    assert f.reject_reason is motivo
+    assert f.qty_filled == 0.0
+    assert f.client_order_id == "rec7a-buy-1792379461"
+    assert s.llamadas("POST", ORDER) == 1
+
+
+def test_rechazo_grabado_no_se_reenvia_ni_se_consulta_tras_reiniciar(
+    tmp_path: Path,
+) -> None:
+    s = Servidor(**{POST: [error("err_filtro_notional.json")]})
+    v = venue(tmp_path, s)
+    v.submit_order(compra())
+    s.rutas[("GET", "/api/v3/account")] = [ok(grabacion("account_antes.json"))]
+    s.rutas[("GET", "/api/v3/openOrders")] = [ok([])]
+    v2 = venue(tmp_path, s)
+    v2.reconcile()
+    assert [f.reject_reason for f in v2.get_fills()] == [RejectReason.MIN_NOTIONAL]
+    assert s.llamadas("POST", ORDER) == 1
+    assert s.llamadas("GET", ORDER) == 0
+    assert v2.submit_order(compra()).is_duplicate
+
+
+def test_id_rechazado_por_el_venue_devuelve_el_mismo_acuse_sin_red(
+    tmp_path: Path,
+) -> None:
+    s = Servidor(**{POST: [error("err_saldo_compra.json")]})
+    v = venue(tmp_path, s)
+    v.submit_order(compra())
+    assert v.submit_order(compra()).is_duplicate
+    assert s.llamadas("POST", ORDER) == 1
+
+
+def test_rechazo_con_mensaje_no_grabado_se_propaga(tmp_path: Path) -> None:
+    otro = modificada("err_filtro_notional.json", msg="Filter failure: PRICE_FILTER")
+    s = Servidor(**{POST: [ok(otro, 400)]})
+    with pytest.raises(BinanceApiError, match="-1013"):
+        venue(tmp_path, s).submit_order(compra())
+
+
+def test_firma_invalida_al_enviar_se_propaga_y_no_es_un_rechazo(
+    tmp_path: Path,
+) -> None:
+    s = Servidor(**{POST: [error("err_firma_invalida.json")]})
+    v = venue(tmp_path, s)
+    with pytest.raises(BinanceApiError, match="-1022"):
+        v.submit_order(compra())
+    assert v.get_fills() == []
