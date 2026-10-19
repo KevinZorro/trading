@@ -23,6 +23,10 @@ from dataclasses import replace
 from importlib import metadata
 from pathlib import Path
 
+# torch antes que pandas/pyarrow: en Windows, el orden inverso falla con
+# WinError 1114 al cargar c10.dll (conflicto de runtimes OpenMP/CRT).
+import torch  # noqa: F401  isort: skip
+
 from agents.ppo import train_ppo
 from agents.protocol import STUDY_SEEDS
 from agents.runner import build_env, scaler_for
