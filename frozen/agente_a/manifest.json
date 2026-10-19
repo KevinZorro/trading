@@ -1,0 +1,130 @@
+{
+  "adr_0009_sha256": "543312817c82d2513d984243d85eab86d4cdb152ca032559c64cc0ab667bf7d0",
+  "agents": {
+    "101": {
+      "config.json": "a865e5dc64576c20b77a1dd9f75d259d770a8509901b408a25cc595366ab924d",
+      "model.zip": "3ea3fac68a1b57d2b79cd20d833bc2a32e24605ed5ee1e32c732128cfe5c58cc",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "11": {
+      "config.json": "4e712f83483170e932fb91b0a742a82b622afbd170c856b4dd1681593ced3100",
+      "model.zip": "4c3f58baf039cdf8b711685ee41343115a39628a0eb80d6d93fe6a72b6252c50",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "23": {
+      "config.json": "f74840c9cbe02533e19a02377a9c28e768c0c0f5c8754e4c2afe80d8a03ed932",
+      "model.zip": "6e287bb4c2bf8258b1cb642cd42844aae653ca5a9a55478e117e86cfdbc26ea2",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "37": {
+      "config.json": "21b8d2f2239710e67437271040b1cd77f36759082250610a6cced5dbd195f4de",
+      "model.zip": "a9709671213a3307774fd8df6ac65171d3f05e51731b2457a5524b6d65619236",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "41": {
+      "config.json": "730747075b23732742975960ec28a9c25e9a90801ab28dc0ecadd5785c276e20",
+      "model.zip": "98d34464818199d89267216a7bebc6a7da9f2a8733111a28d280b6edfa974316",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "59": {
+      "config.json": "66ff9e1a175ee34c2bfb598231dabebf5743838af090b9fba3a506f4084b40b1",
+      "model.zip": "33e2fbba225275e2b6ee0d1b467ce32320277350806799b5f8bbcf2a5de526da",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "67": {
+      "config.json": "ca656c20ea259ab2c730968d8b57715cb7f5302cbb1e30db1284616c04e5ec37",
+      "model.zip": "be949a330369ffb6a7a320b35f46021343d48f3578741c8cd3b7a5b6fe81aa45",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "73": {
+      "config.json": "f0c5d61347b1e5a61d2fd15e4de381241ee80ec5e23e3451985c79614a50951f",
+      "model.zip": "40452103b32ab7164fe1adfd0f978b6ee5bfb121931e12edff69dc6d6430c61b",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "89": {
+      "config.json": "89614525f68a0815b7c8ea64f77f5ed606c38fadd5a133112ac0b07dbbe1d936",
+      "model.zip": "cf3e93ed6a3023fad3474ab56b62486d0b3e115831156d604bddbe27db5cd57d",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    },
+    "97": {
+      "config.json": "a9b42ec58c98ce8ea04c2d90a2a47cbae20d036cc21581283a8dd5ea36b7a3cd",
+      "model.zip": "efef84371388544128a5a1e2fc5c4fbb2acf5be8c727adda04e58b08bad8ee4c",
+      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+    }
+  },
+  "dataset_sha256": "0940f089d796da4d5bda34b30463e0c3b19b1e6b8c322f8fcd3517f2aee49cc8",
+  "exchange_info_sha256": "3523e03ac58caaf960732c44363ea21d81e683d922b9e8235e117a8aa232ebbb",
+  "git_commit": "125fb717378b524fd9e0c74dfe6d5ebfa88e6970",
+  "seeds": [
+    11,
+    23,
+    37,
+    41,
+    59,
+    67,
+    73,
+    89,
+    97,
+    101
+  ],
+  "versions": {
+    "numpy": "2.1.3",
+    "stable-baselines3": "2.7.0",
+    "torch": "2.14.0"
+  },
+  "walkforward_config": {
+    "bars_per_year": 365.0,
+    "cash_rate": 0.0,
+    "initial_cash": 100.0,
+    "max_participation": 0.1,
+    "ppo": {
+      "batch_size": 256,
+      "clip_range": 0.2,
+      "device": "cpu",
+      "ent_coef": 0.0,
+      "gae_lambda": 0.95,
+      "gamma": 0.99,
+      "learning_rate": 0.0003,
+      "lstm_hidden_size": 64,
+      "max_grad_norm": 0.5,
+      "n_epochs": 10,
+      "n_steps": 2048,
+      "net_arch": [
+        64,
+        64
+      ],
+      "policy_name": "MlpPolicy",
+      "recurrent": false,
+      "reward_scale": 100.0,
+      "total_timesteps": 60000,
+      "vf_coef": 0.5
+    },
+    "reward_scale": 100.0,
+    "safety": 0.98,
+    "seeds": [
+      11,
+      23,
+      37,
+      41,
+      59,
+      67,
+      73,
+      89,
+      97,
+      101
+    ],
+    "sizer": {
+      "deadband": 0.0,
+      "numeric_zero_rel": 1e-12,
+      "safety": 0.98,
+      "tag": "target_weight"
+    },
+    "slippage_k": 0.1,
+    "spread_max_bps": 200.0,
+    "step": 200,
+    "test": 200,
+    "total_timesteps": 60000,
+    "train": 800,
+    "validation": 200
+  }
+}
