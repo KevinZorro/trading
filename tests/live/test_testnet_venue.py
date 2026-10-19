@@ -320,7 +320,7 @@ def test_cancelar_inexistente_no_es_error(tmp_path: Path) -> None:
 
 def test_cancelar_con_otro_error_se_propaga(tmp_path: Path) -> None:
     s = Servidor(**{"DELETE__/api/v3/order": [error("err_firma_invalida.json")]})
-    with pytest.raises(BinanceApiError, match="-1130"):
+    with pytest.raises(BinanceApiError, match="-1022"):
         venue(tmp_path, s).cancel_order("nada-1")
 
 

@@ -156,8 +156,68 @@
       "path": "/api/v3/account",
       "params": {},
       "http_status": 400,
-      "received_at_utc": "2026-10-19T03:11:05.986Z",
-      "sha256": "2328e452d1e7f1c918bb817e61a898fe2bd0572196e12df53f92b23d9dc2f3c7"
+      "received_at_utc": "2026-10-19T05:13:00.870Z",
+      "sha256": "2c7a4f8286bc4d169c09610de09928dc3177ef4a92be761631019329e2a904a4"
+    },
+    "err_filtro_lot_size.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": "0.000001",
+        "newClientOrderId": "rec7e-lot-1792386779",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T05:12:59.787Z",
+      "sha256": "56a5ef2af49b138459e5f932ecf857caf0dd384f61380c2c4dfbf296e33d029c"
+    },
+    "err_filtro_notional.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": "0.00001",
+        "newClientOrderId": "rec7e-not-1792386779",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T05:13:00.052Z",
+      "sha256": "920f8e4b230d67b877ffb2fe31c7d5fd1f7deb33e98d4cd28d290df8ea4521ff"
+    },
+    "err_saldo_compra.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "type": "MARKET",
+        "quantity": "133.97193",
+        "newClientOrderId": "rec7e-cmp-1792386779",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T05:13:00.329Z",
+      "sha256": "66b3a0b0a71dcd259a11db446393e36885cdb05de85c218e6f59a70309b40a20"
+    },
+    "err_saldo_venta.json": {
+      "method": "POST",
+      "path": "/api/v3/order",
+      "params": {
+        "symbol": "BTCUSDT",
+        "side": "SELL",
+        "type": "MARKET",
+        "quantity": "133.97193",
+        "newClientOrderId": "rec7e-vta-1792386779",
+        "newOrderRespType": "FULL"
+      },
+      "http_status": 400,
+      "received_at_utc": "2026-10-19T05:13:00.596Z",
+      "sha256": "66b3a0b0a71dcd259a11db446393e36885cdb05de85c218e6f59a70309b40a20"
     }
   }
 }
