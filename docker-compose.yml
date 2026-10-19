@@ -24,6 +24,13 @@ services:
     command: ["python", "-m", "live.shadow"]
     volumes:
       - ${SHADOW_HOST_DATA:-/var/lib/shadow}:/data
+      # Agente A congelado (ADR 0009), solo lectura. Sin pesos la sombra mide
+      # costos igual y registra el fallo de los agentes en el heartbeat.
+      - ${SHADOW_HOST_FROZEN:-/var/lib/shadow-frozen}:/frozen:ro
+    # `environment` reemplaza al del ancla (no se fusiona): repetir SHADOW_DATA_DIR.
+    environment:
+      SHADOW_DATA_DIR: /data
+      SHADOW_FROZEN_DIR: /frozen
     # Si el heartbeat se atrasa, Docker lo marca unhealthy y el watchdog avisa. El
     # reinicio de un proceso colgado lo hace el propio proceso (live.stall).
     healthcheck:
