@@ -1,0 +1,4 @@
+{"received_at_utc": "2026-10-19T05:06:59.267Z", "frame": {"id": "sub-c-1792386406", "status": 400, "error": {"code": -1022, "msg": "Signature for this request is not valid."}, "rateLimits": [{"rateLimitType": "REQUEST_WEIGHT", "interval": "MINUTE", "intervalNum": 1, "limit": 6000, "count": 33}]}}
+{"received_at_utc": "2026-10-19T05:06:59.269Z", "frame": {"subscriptionId": 0, "event": {"e": "outboundAccountPosition", "E": 1792386417397, "u": 1792386417396, "B": [{"a": "BTC", "f": "1.00100000", "l": "0.00000000"}, {"a": "USDT", "f": "9917.35368000", "l": "0.00000000"}]}}}
+{"received_at_utc": "2026-10-19T05:06:59.980Z", "frame": {"subscriptionId": 0, "event": {"e": "eventStreamTerminated", "E": 1792386419198}}}
+{"received_at_utc": "2026-10-19T05:06:59.980Z", "frame": {"id": "unsub-1792386406", "status": 200, "result": {}, "rateLimits": [{"rateLimitType": "REQUEST_WEIGHT", "interval": "MINUTE", "intervalNum": 1, "limit": 6000, "count": 35}]}}

@@ -19,6 +19,12 @@ rl = [
     "stable-baselines3==2.7.0",
     "sb3-contrib==2.7.0",
 ]
+# Cliente WebSocket para testnet (ADR 0007, PR 8). Fuera de `dependencies` y del
+# grupo por defecto: solo lo importan el grabador y, en el PR 8b, el observador de
+# fills; el nucleo y el CI no lo necesitan.
+ws = [
+    "websockets==15.0.1",
+]
 dev = [
     "pytest==8.3.4",
     "pytest-cov==6.0.0",

@@ -48,3 +48,32 @@ def assert_testnet_order_url(url: str) -> str:
             "En la Etapa 3.5 mainnet es de solo lectura por construccion."
         )
     return url
+
+
+# WebSocket API de testnet (ADR 0007, PR 8). Misma regla que el REST: host exacto.
+TESTNET_WS_HOSTS: frozenset[str] = frozenset({"ws-api.testnet.binance.vision"})
+TESTNET_WS_PATH = "/ws-api/v3"
+
+
+def assert_testnet_ws_url(url: str) -> str:
+    """Devuelve la URL ``wss`` si es el WebSocket API de testnet; si no, lanza."""
+    partes = urlsplit(url)
+    host = (partes.hostname or "").lower()
+    if partes.scheme != "wss":
+        raise MainnetOrderError(
+            f"el websocket de ordenes es solo wss, no {partes.scheme!r}"
+        )
+    if partes.username is not None or partes.password is not None:
+        raise MainnetOrderError(
+            "URL de websocket con credenciales embebidas: rechazada"
+        )
+    if partes.port is not None:
+        raise MainnetOrderError("URL de websocket con puerto explicito: rechazada")
+    if host not in TESTNET_WS_HOSTS:
+        raise MainnetOrderError(
+            f"host {host!r} no es de testnet ({sorted(TESTNET_WS_HOSTS)}). "
+            "En la Etapa 3.5 mainnet es de solo lectura por construccion."
+        )
+    if partes.path != TESTNET_WS_PATH or partes.query:
+        raise MainnetOrderError(f"el path del websocket debe ser {TESTNET_WS_PATH}")
+    return url

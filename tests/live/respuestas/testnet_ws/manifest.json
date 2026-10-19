@@ -1,0 +1,19 @@
+{
+  "script": "scripts/grabar_ws_testnet.py",
+  "ws_url": "wss://ws-api.testnet.binance.vision/ws-api/v3",
+  "symbol": "BTCUSDT",
+  "files": {
+    "fase_a_fill_normal.jsonl": {
+      "frames": 6,
+      "sha256": "c242106c6ef6ac3b651a71f4bc86b54ed711942a3c4d27a9b63dad42cbb8144f"
+    },
+    "fase_b_fill_con_socket_caido.jsonl": {
+      "frames": 3,
+      "sha256": "bda99ea53d10b22fb0dea79f97d0a4024e62b756c65cb37538a6b6e3dbdee343"
+    },
+    "fase_c_firma_invalida_y_baja.jsonl": {
+      "frames": 4,
+      "sha256": "aea7da80293b5d694cc66fb772de9fbe51246fe0d8d0cbb518ef5cceb1083d9c"
+    }
+  }
+}
