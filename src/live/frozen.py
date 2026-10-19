@@ -57,7 +57,9 @@ def write_manifest(root: Path, meta: Mapping[str, Any]) -> dict[str, Any]:
             raise FrozenError(f"seed-{seed}: faltan {faltan}")
         agentes[str(seed)] = {a: sha256_file(base / a) for a in ARCHIVOS}
     manifest = {**meta, "seeds": list(STUDY_SEEDS), "agents": agentes}
-    (root / MANIFEST).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    (root / MANIFEST).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", newline="\n"
+    )
     return manifest
 
 

@@ -2,59 +2,60 @@
   "adr_0009_sha256": "543312817c82d2513d984243d85eab86d4cdb152ca032559c64cc0ab667bf7d0",
   "agents": {
     "101": {
-      "config.json": "a865e5dc64576c20b77a1dd9f75d259d770a8509901b408a25cc595366ab924d",
+      "config.json": "4121fb747d6b16e2db36a8b9ea79abce23181bb78323e1acdea7828aa10488d0",
       "model.zip": "3ea3fac68a1b57d2b79cd20d833bc2a32e24605ed5ee1e32c732128cfe5c58cc",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "11": {
-      "config.json": "4e712f83483170e932fb91b0a742a82b622afbd170c856b4dd1681593ced3100",
+      "config.json": "0f73f3cfdc0b1b9a9c09e243cd74f4aa5b6a4b7ad3432471ee0744b0aec8983b",
       "model.zip": "4c3f58baf039cdf8b711685ee41343115a39628a0eb80d6d93fe6a72b6252c50",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "23": {
-      "config.json": "f74840c9cbe02533e19a02377a9c28e768c0c0f5c8754e4c2afe80d8a03ed932",
+      "config.json": "0b0854d24ab17d60d88edfb7d9f9d8ca3707a35af6584e42c3a0a3d2fa60071a",
       "model.zip": "6e287bb4c2bf8258b1cb642cd42844aae653ca5a9a55478e117e86cfdbc26ea2",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "37": {
-      "config.json": "21b8d2f2239710e67437271040b1cd77f36759082250610a6cced5dbd195f4de",
+      "config.json": "8a4acc44699aef9493e630811bddc09b1bede4c0150c5122c049defcebcb7805",
       "model.zip": "a9709671213a3307774fd8df6ac65171d3f05e51731b2457a5524b6d65619236",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "41": {
-      "config.json": "730747075b23732742975960ec28a9c25e9a90801ab28dc0ecadd5785c276e20",
+      "config.json": "7795cb62c74360babcac78be50a45b93ab78c4c59a6f6155e5627e33a6d61d90",
       "model.zip": "98d34464818199d89267216a7bebc6a7da9f2a8733111a28d280b6edfa974316",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "59": {
-      "config.json": "66ff9e1a175ee34c2bfb598231dabebf5743838af090b9fba3a506f4084b40b1",
+      "config.json": "7132ebcebbcb580189208499883563e11d1f15fce38802ec2dee5d41c1b1810a",
       "model.zip": "33e2fbba225275e2b6ee0d1b467ce32320277350806799b5f8bbcf2a5de526da",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "67": {
-      "config.json": "ca656c20ea259ab2c730968d8b57715cb7f5302cbb1e30db1284616c04e5ec37",
+      "config.json": "e131a4e6cdaabe94bed4513c1082c2fd27aed4478d89231c01a6ce33a4c3cfd2",
       "model.zip": "be949a330369ffb6a7a320b35f46021343d48f3578741c8cd3b7a5b6fe81aa45",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "73": {
-      "config.json": "f0c5d61347b1e5a61d2fd15e4de381241ee80ec5e23e3451985c79614a50951f",
+      "config.json": "2e98235e741e0909e4b7ec663f92f8aff1dfd2c5dc44ac76dbb1bfd4dd478c65",
       "model.zip": "40452103b32ab7164fe1adfd0f978b6ee5bfb121931e12edff69dc6d6430c61b",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "89": {
-      "config.json": "89614525f68a0815b7c8ea64f77f5ed606c38fadd5a133112ac0b07dbbe1d936",
+      "config.json": "5dac2b08af05462d6de7bdc0421c3a408442eee45f1e062fcb4c924eda05a89b",
       "model.zip": "cf3e93ed6a3023fad3474ab56b62486d0b3e115831156d604bddbe27db5cd57d",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     },
     "97": {
-      "config.json": "a9b42ec58c98ce8ea04c2d90a2a47cbae20d036cc21581283a8dd5ea36b7a3cd",
+      "config.json": "93453130d096d0b78e0ac27f328bd60d287c5b3cd47b032a53115f0130d4994f",
       "model.zip": "efef84371388544128a5a1e2fc5c4fbb2acf5be8c727adda04e58b08bad8ee4c",
-      "scaler.json": "f5a957a493dc445e060cd8c6a024e79ffb02150b9598c357273415e66676ea6e"
+      "scaler.json": "24c5f4efafe8f228dadb4fce621037014b7082a7f4e7f8c2ff24c8d3d57e6667"
     }
   },
   "dataset_sha256": "0940f089d796da4d5bda34b30463e0c3b19b1e6b8c322f8fcd3517f2aee49cc8",
   "exchange_info_sha256": "3523e03ac58caaf960732c44363ea21d81e683d922b9e8235e117a8aa232ebbb",
   "git_commit": "125fb717378b524fd9e0c74dfe6d5ebfa88e6970",
+  "nota_fin_de_linea": "Generado en Windows: config.json y scaler.json se hashearon con CRLF y el repo los guarda con LF. Los hashes de esos 20 archivos se recalcularon sobre los bytes versionados tras comprobar que cada hash original era exactamente el de su version CRLF; model.zip no cambio. adr_0009_sha256 es el hash de la version CRLF del ADR (el de la version LF de main es b91ade78c36c623a039ee5d176ebb39e21bbb0774364ddc0197c88bca09561a4).",
   "seeds": [
     11,
     23,
