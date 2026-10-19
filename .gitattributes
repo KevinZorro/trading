@@ -4,3 +4,5 @@
 datasets/** -text -diff
 # Las respuestas grabadas de Binance tambien se verifican por SHA256.
 tests/live/respuestas/** -text
+# Los pesos congelados se verifican por SHA256 contra su manifest: sin conversion de fin de linea.
+frozen/** -text

@@ -92,7 +92,9 @@ def main(argv: list[str] | None = None) -> int:
         base = agent_dir(out, seed)
         base.mkdir(parents=True, exist_ok=True)
         politica.save(str(base / "model.zip"))
-        (base / "scaler.json").write_text(json.dumps(escalador.to_dict(), indent=2))
+        (base / "scaler.json").write_text(
+            json.dumps(escalador.to_dict(), indent=2), newline="\n"
+        )
         (base / "config.json").write_text(
             json.dumps(
                 {
@@ -107,7 +109,8 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
                 sort_keys=True,
                 default=str,
-            )
+            ),
+            newline="\n",
         )
         print(f"seed {seed}: listo", flush=True)
 
