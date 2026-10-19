@@ -249,9 +249,9 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | PR 7b: `BinanceTestnetVenue`, idempotente por `client_order_id` | ADR 0007 §7 | #39 | mergeado | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py`, `tests/live/test_testnet_venue_leakage.py` |
 | Grabador de errores de testnet (-1013, -2010, -1022) | PR 7a | #40 | mergeado | `scripts/grabar_respuestas_testnet.py`, `tests/live/test_grabador_testnet.py` |
 | PR 8a: grabador del WebSocket de testnet y guard `wss` | ADR 0007 §7 | #41 | mergeado | `scripts/grabar_ws_testnet.py`, `tests/live/test_grabador_ws_testnet.py`, `tests/live/respuestas/testnet_ws/` |
-| Grabaciones reales de -1013, -2010 y -1022 | PR 7a | #42 | abierto (borrador) | rama `chore/grabaciones-errores-testnet` |
-| Venue de testnet maneja -1013, -2010 y -1022 con las grabaciones | PR 7b | sin PR | pendiente (tras #42) | hoy se propagan como excepción en `src/live/testnet_venue.py` |
-| PR 8b: WebSocket como observador (comisión real, fills tras caída) | ADR 0007 §7 | sin PR | pendiente | lo grabado en 8a: `tests/live/respuestas/testnet_ws/` |
+| Grabaciones reales de -1013, -2010 y -1022 | PR 7a | #42 | mergeado | `tests/live/respuestas/testnet/manifest.json`, `tests/live/test_grabador_testnet.py` |
+| Venue de testnet mapea -1013 y -2010 a rechazos con motivo (-1022 sigue deteniendo el proceso) | PR 7b | #45 | abierto (borrador) | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py` |
+| PR 8b: WebSocket como observador (comisión real, fills tras caída) | ADR 0007 §7 | #44 | mergeado | `src/live/testnet_ws.py`, `tests/live/test_testnet_ws.py` |
 | Persistir el estado de `RiskLayer` ante reinicio | deuda de PR 5b | sin PR | pendiente | `src/risk/layer.py` no persiste estado |
 
 ### Sombra de costos en mainnet
