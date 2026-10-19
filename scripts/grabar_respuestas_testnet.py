@@ -67,6 +67,16 @@ def main(argv: list[str] | None = None) -> int:
     reloj = SystemClock()
     cliente = BinanceTestnetClient(creds, reloj)
     cliente.sync_time()
+    # Antes de grabar nada: con claves invalidas todas las respuestas serian 401 y
+    # la grabacion no serviria para testear el venue.
+    sonda = cliente.send("GET", "/api/v3/account")
+    if sonda.status != 200:
+        raise SystemExit(
+            f"las claves no sirven (HTTP {sonda.status}: {sonda.body[:120]!r}). "
+            "Revisa TESTNET_API_KEY y TESTNET_API_SECRET: deben ser de "
+            "https://testnet.binance.vision, sin comillas ni espacios. "
+            "No se grabo nada."
+        )
     corrida = str(int(reloj.now().astype("datetime64[s]").astype(np.int64)))
     sym, qty = args.symbol, args.qty
     ids = {k: f"rec7a-{k}-{corrida}" for k in ("buy", "sell")}
@@ -129,7 +139,12 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     # Firma invalida a proposito, armada a mano: el cliente no deja firmar mal.
-    mala = urllib.parse.urlencode({"timestamp": 1, "signature": "0" * 64})
+    # Con timestamp valido: si no, Binance rechaza el timestamp (-1130) antes de
+    # mirar la firma y la grabacion no muestra el error de firma.
+    ahora = int(reloj.now().astype("datetime64[ms]").astype(np.int64))
+    mala = urllib.parse.urlencode(
+        {"timestamp": ahora, "recvWindow": 5000, "signature": "0" * 64}
+    )
     url = f"{TESTNET_BASE_URL}/api/v3/account?{mala}"
     respuesta = urllib_transport(
         HttpRequest("GET", url, {"X-MBX-APIKEY": creds.api_key})
