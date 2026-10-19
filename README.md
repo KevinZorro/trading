@@ -140,8 +140,8 @@ PYTHONPATH=src uv run --group rl python -m agents.cli walkforward --out results/
 
 Diseño, seguridad y métrica pre-registrada en `docs/adr/0007-modo-sombra-y-testnet.md`.
 La sombra lee datos públicos de mainnet y **no envía órdenes**; el código que envía
-órdenes solo acepta hosts de testnet (`live.guard`). En este PR solo existe la
-configuración: el proceso llega en los PRs siguientes.
+órdenes solo acepta hosts de testnet (`live.guard`). El proceso, el
+despliegue y el Agente A congelado ya están en `main`; ver la matriz al final.
 
 ### Configuración
 
@@ -195,7 +195,78 @@ Despliegue en VPS con Docker, watchdog y NTP: `docs/despliegue-sombra.md`.
 5. Si el token se filtra, en @BotFather usa `/revoke` para invalidarlo y generar
    otro.
 
-## Estado
+## Estado y matriz de trazabilidad
 
-Etapas 1 (simulador, baselines y métricas) y 2 (entorno Gymnasium) cerradas.
-Ver la sección "Etapas" de `CLAUDE.md`.
+Etapas 1 (simulador, baselines y métricas), 2 (entorno Gymnasium) y 3 (Agente A, protocolo
+de validación y Tarea C) cerradas. La Etapa 3.5 está en curso. Las reglas y la lista de
+etapas están en [`CLAUDE.md`](CLAUDE.md); aquí se rastrea cada hito hasta su PR y su
+evidencia en el repositorio.
+
+Estado al 2026-10-19. Los números de PR son de GitHub; "mergeado" quiere decir que
+está en `main`. Cuando cambia un hito, se actualiza esta tabla en el mismo PR.
+
+### Etapas 1 a 3: simulador, entorno y Agente A
+
+| Hito | Origen | PR | Estado | Evidencia |
+|---|---|---|---|---|
+| CI con job propio de anti-leakage | `CLAUDE.md` (invariantes de CI) | #1 | mergeado | `.github/workflows/ci.yml`, marcador `leakage` |
+| Métricas sobre ambas series de equity | Etapa 1 | #2, #3 | mergeado | `src/eval/metrics.py`, `tests/eval/` |
+| Arquitectura para ejecución real (`ExecutionVenue`, `Clock`, `client_order_id`, `risk/`) | ADR 0001, Etapa 1 | #4 | mergeado | `src/sim/venue.py`, `src/sim/clock.py`, `src/sim/ids.py`, `src/risk/layer.py`, `tests/sim/test_venue.py` |
+| Entorno Gymnasium con anti-leakage | Etapa 2 | #5 | mergeado | `src/envs/`, `tests/envs/test_leakage.py` |
+| Fixtures sintéticos con óptimo calculable | ADR 0002 | #6 | mergeado | `src/data/fixtures.py`, `tests/data/test_fixtures_optimum.py` |
+| Agente A (PPO) y protocolo de validación | ADR 0003 | #7 | mergeado | `src/agents/protocol.py`, `src/agents/ppo.py`, `tests/agents/test_protocol.py` |
+| Varianza de mercado separada de la de entrenamiento | ADR 0004 (Tarea A) | #8 | mergeado | `src/eval/distribution.py`, `tests/eval/test_distribution.py` |
+| Contrato del adaptador de SB3, sin torch | ADR 0003 (Tarea B) | #9 | mergeado | `tests/agents/test_ppo_contract.py` |
+| Nivel 4 partido en 4a y 4b, reportado como par | ADR 0005 (Tarea D) | #10, #12 | mergeado | `docs/adr/0005-nivel-4-partido-en-dos-hipotesis.md`, `results/multipath_level_4b.json` |
+| Nivel 3 con 10 caminos | ADR 0004 (Tarea E) | #11 | mergeado | `results/multipath_level_3_mlp.json`, `results/multipath_level_3_lstm.json` |
+| Nuevo orden de etapas y regla de tamaño de PR | `CLAUDE.md` | #13 | mergeado | sección "Etapas" y "Tamaño de PR" de `CLAUDE.md` |
+| Dataset BTCUSDT con manifest y validación | Tarea C1 | #14, #15 | mergeado | `datasets/`, `src/data/binance.py`, `src/data/manifest.py` |
+| Walk-forward sellado sobre BTCUSDT diario | ADR 0006 (C2) | #16, #17, #18 | mergeado | `docs/adr/0006-walk-forward-sobre-btcusdt-diario.md`, `src/agents/walkforward.py`, `src/eval/walkforward.py` |
+| Resultados de la Tarea C3: no supera a buy-and-hold, N = 1 | ADR 0006 (C3) | #19, #21 | mergeado | `results/c3/REPORTE.md`, `results/c3/SEAL.json`, `results/c3/MANIFEST.json` |
+| Un delta numéricamente cero no es una orden | `CLAUDE.md` (anti-patrones) | #20 | mergeado | `src/sim/sizing.py`, `tests/sim/test_sizing.py` |
+
+### Etapa 3.5: sombra sobre mainnet y testnet
+
+La partición por PR es la de la sección 7 del
+[ADR 0007](docs/adr/0007-modo-sombra-y-testnet.md) (pre-registro, no se edita). La
+sombra valida costos; testnet valida mecánica, nunca costos.
+
+| Hito | Origen | PR | Estado | Evidencia |
+|---|---|---|---|---|
+| PR 1: ADR 0007, `ShadowConfig`, guard de testnet y logs | ADR 0007 §7 | #22 | mergeado | `docs/adr/0007-modo-sombra-y-testnet.md`, `src/live/config.py`, `src/live/guard.py`, `tests/live/test_guard.py` |
+| CLAUDE.md partido por módulo | `CLAUDE.md` | #23 | mergeado | `src/*/CLAUDE.md`, `scripts/verificar_particion_claude_md.py` |
+| PR 2: `MarketData` REST de solo lectura y grabación de respuestas | ADR 0007 §7 | #24 | mergeado | `src/live/marketdata.py`, `tests/live/respuestas/`, `tests/live/test_marketdata.py` |
+| `min_notional` medido y `InstrumentSpec` desde `exchangeInfo` | ADR 0008 | #25 | mergeado | `docs/adr/0008-instrument-spec-desde-exchangeinfo.md` |
+| PR 3: `walk_book` y `model_cost` puras | ADR 0007 §7 | #26 | mergeado | `src/live/shadow_cost.py`, `tests/live/test_shadow_cost.py`, `tests/live/test_shadow_cost_leakage.py` |
+| Hook de git-guard versionado | flujo de trabajo | #27 | mergeado | `.claude/hooks/git-guard.sh` |
+| PR 4: proceso de la sombra de costos | ADR 0007 §4 y §7 | #28 | mergeado | `src/live/shadow.py`, `src/live/schedule.py`, `src/live/store.py`, `tests/live/test_shadow.py` |
+| PR 6: despliegue con Docker, watchdog y autoterminación | ADR 0007 §7 | #29 | mergeado | `Dockerfile`, `docker-compose.yml`, `docs/despliegue-sombra.md`, `src/live/watchdog.py`, `tests/live/test_despliegue.py` |
+| PR 5a: `ShadowVenue` y `FillStore` | ADR 0007 §7 | #30 | mergeado | `src/live/venue.py`, `src/live/fillstore.py`, `tests/live/test_venue.py`, `tests/live/test_venue_leakage.py` |
+| PR 5b: Agente A congelado, una política por semilla | ADR 0009 | #31, #34, #35 | mergeado | `docs/adr/0009-agente-a-congelado-todas-las-semillas.md`, `src/live/frozen.py`, `frozen/agente_a/`, `tests/live/test_frozen_versionado.py` |
+| PR 7a: capa HTTP firmada de testnet y grabador | ADR 0007 §7 | #32, #37, #38 | mergeado | `src/live/testnet_http.py`, `scripts/grabar_respuestas_testnet.py`, `tests/live/respuestas/testnet/` |
+| PR 5c: Agente A congelado conectado a la sombra | ADR 0009 | #33 | mergeado | `src/live/agent_step.py`, `src/live/shadow_agents.py`, `tests/live/test_shadow_agents.py` |
+| Imagen Docker con torch solo CPU | ADR 0009 | #36 | mergeado | `Dockerfile`, `tests/live/test_despliegue.py` |
+| PR 7b: `BinanceTestnetVenue`, idempotente por `client_order_id` | ADR 0007 §7 | #39 | mergeado | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py`, `tests/live/test_testnet_venue_leakage.py` |
+| Grabador de errores de testnet (-1013, -2010, -1022) | PR 7a | #40 | mergeado | `scripts/grabar_respuestas_testnet.py`, `tests/live/test_grabador_testnet.py` |
+| PR 8a: grabador del WebSocket de testnet y guard `wss` | ADR 0007 §7 | #41 | mergeado | `scripts/grabar_ws_testnet.py`, `tests/live/test_grabador_ws_testnet.py`, `tests/live/respuestas/testnet_ws/` |
+| Grabaciones reales de -1013, -2010 y -1022 | PR 7a | #42 | abierto (borrador) | rama `chore/grabaciones-errores-testnet` |
+| Venue de testnet maneja -1013, -2010 y -1022 con las grabaciones | PR 7b | sin PR | pendiente (tras #42) | hoy se propagan como excepción en `src/live/testnet_venue.py` |
+| PR 8b: WebSocket como observador (comisión real, fills tras caída) | ADR 0007 §7 | sin PR | pendiente | lo grabado en 8a: `tests/live/respuestas/testnet_ws/` |
+| Persistir el estado de `RiskLayer` ante reinicio | deuda de PR 5b | sin PR | pendiente | `src/risk/layer.py` no persiste estado |
+
+### Sombra de costos en mainnet
+
+| Hito | Estado |
+|---|---|
+| Despliegue | Hecho el 2026-10-19 en una VM del proveedor de nube; el proceso corre en Docker (`docs/despliegue-sombra.md`). |
+| Reloj de 30 días | Arranca con el primer snapshot válido de las 00:00:30 UTC, esperado el 2026-10-20. |
+| Veredicto | Menos de 25 de los 30 snapshots válidos significa **NO EVALUABLE** (ADR 0007 §6). La predicción sobre el spread está pre-registrada ahí y no se edita. |
+
+### Etapas siguientes
+
+| Etapa | Estado |
+|---|---|
+| 4. Pipeline de noticias con validación point-in-time | sin empezar; se desarrolla en paralelo con la sombra. Antes de la Etapa 5, calibrar el presupuesto de entrenamiento sobre el fixture 4b con la grilla declarada en un ADR |
+| 5. Agente B y comparación controlada contra A | sin empezar |
+| 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
+| 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
