@@ -1,0 +1,61 @@
+{
+  "env": {
+    "observation": {
+      "atr_period": 14,
+      "bollinger_k": 2.0,
+      "bollinger_period": 20,
+      "lookback": 10,
+      "macd_fast": 12,
+      "macd_signal": 9,
+      "macd_slow": 26,
+      "rsi_period": 14,
+      "volume_period": 20,
+      "warmup": 26
+    },
+    "observation_bound": 100.0,
+    "sizer": {
+      "deadband": 0.0,
+      "numeric_zero_rel": 1e-12,
+      "safety": 0.98,
+      "tag": "target_weight"
+    }
+  },
+  "ppo": {
+    "batch_size": 256,
+    "clip_range": 0.2,
+    "device": "cpu",
+    "ent_coef": 0.0,
+    "gae_lambda": 0.95,
+    "gamma": 0.99,
+    "learning_rate": 0.0003,
+    "lstm_hidden_size": 64,
+    "max_grad_norm": 0.5,
+    "n_epochs": 10,
+    "n_steps": 2048,
+    "net_arch": [
+      64,
+      64
+    ],
+    "policy_name": "MlpPolicy",
+    "recurrent": false,
+    "reward_scale": 100.0,
+    "total_timesteps": 60000,
+    "vf_coef": 0.5
+  },
+  "seed": 59,
+  "sim": {
+    "allow_short": false,
+    "bars_per_year": 365.0,
+    "cash_rate": 0.0,
+    "commission": "instrument",
+    "initial_cash": 100.0,
+    "latency_bars": 1,
+    "max_participation": 0.1,
+    "run_id": "walkforward_btcusdt_1d_principal",
+    "slippage": "sqrt",
+    "spread": "corwin_schultz"
+  },
+  "train_bars": 1000,
+  "train_first_timestamp": "2024-01-02T00:00:00.000000000",
+  "train_last_timestamp": "2026-09-27T00:00:00.000000000"
+}
