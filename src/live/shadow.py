@@ -35,6 +35,7 @@ from live.config import ShadowConfig
 from live.logs import configure_json_logging
 from live.marketdata import BookSnapshot, MarketData, MarketDataError
 from live.schedule import Due, next_due
+from live.shadow_agents import ShadowAgents
 from live.shadow_cost import ShadowCostError, Side, cost_ratios, model_cost, walk_book
 from live.stall import StallGuard, exit_process
 from live.store import SnapshotStore, file_sha256
@@ -87,8 +88,10 @@ class ShadowRunner:
         slippage: SlippageModel,
         sleep: Callable[[float], object],
         on_progress: Callable[[], object] = lambda: None,
+        agents: ShadowAgents | None = None,
     ) -> None:
         self._on_progress = on_progress
+        self._agents = agents
         self._config = config
         self._market = market
         self._clock = clock
@@ -195,6 +198,9 @@ class ShadowRunner:
                     "asks": libro.asks.tolist(),
                 },
             )
+        # Despues de persistir el snapshot: un agente no puede costar la medicion.
+        if due.kind == "daily" and self._agents is not None:
+            self._agents.run(libro)
         if registro.valid:
             self._last_valid = registro.scheduled
             self._invalid_streak = 0
@@ -220,6 +226,7 @@ class ShadowRunner:
                 "last_scheduled": last,
                 "last_valid_scheduled": self._last_valid,
                 "consecutive_invalid": self._invalid_streak,
+                **({"agents": self._agents.summary()} if self._agents else {}),
             }
         )
 
@@ -244,6 +251,7 @@ def build_runner(
     adr_path: Path = ADR_PATH,
     git_sha: str = "unknown",
     on_progress: Callable[[], object] = lambda: None,
+    agent_loader: Callable[[Path], Any] | None = None,
 ) -> ShadowRunner:
     from live.marketdata import BinanceRestMarketData
 
@@ -260,6 +268,20 @@ def build_runner(
         if fetch
         else BinanceRestMarketData(config.market_data_url, clock)
     )
+    agents = (
+        ShadowAgents(
+            frozen_dir=config.frozen_dir,
+            data_dir=config.data_dir,
+            market=market,
+            clock=clock,
+            symbol=config.symbol,
+            depth_limit=config.depth_limit,
+            loader=agent_loader,
+            on_progress=on_progress,
+        )
+        if config.frozen_dir is not None
+        else None
+    )
     return ShadowRunner(
         config,
         market,
@@ -269,6 +291,7 @@ def build_runner(
         slippage=sim.slippage,
         sleep=sleep,
         on_progress=on_progress,
+        agents=agents,
     )
 
 

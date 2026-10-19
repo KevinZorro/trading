@@ -24,6 +24,22 @@ válidos de las 00:00:30 UTC**. Cada día sin proceso vivo a esa hora cuenta.
 - El watchdog avisa al fallar, recuerda cada 6 h y avisa al recuperarse. Además avisa
   a las 00:10 UTC si falta el snapshot diario válido del día.
 
+## Agente A congelado (opcional, ADR 0009)
+
+Si `SHADOW_FROZEN_DIR` está definida (el compose la fija en `/frozen`), cada snapshot
+diario de las 00:00:30 corre además los diez Agentes A congelados, cada uno con su
+ledger de 100 USDT en `<datos>/agents/seed-<n>/`. Los agentes corren **después** de
+guardar el snapshot: si faltan los pesos, el manifest no coincide o falla un agente, el
+snapshot de costos se toma igual y el fallo queda en el log y en `heartbeat.json`
+(`agents.errors`). Los pesos se copian al servidor en `${SHADOW_HOST_FROZEN}`
+(por defecto `/var/lib/shadow-frozen`) con el `manifest.json` de
+`scripts/congelar_agente_a.py`.
+
+**Pendiente:** la imagen se construye con `uv sync --no-dev`, sin el grupo `rl`: no
+trae `stable-baselines3` ni `torch`, así que hoy los agentes fallan al cargar el modelo
+(y lo dicen en `agents.errors`). Instalar el grupo `rl` en la imagen (torch solo CPU)
+es un cambio de despliegue aparte.
+
 ## 1. Servidor (lo haces tú)
 
 Cualquier VPS Linux con 1 vCPU, 1 GB de RAM y 10 GB de disco alcanza (~4 MB/día de

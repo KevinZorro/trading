@@ -40,6 +40,8 @@ class ShadowConfig:
     telegram_token: str = field(default="", repr=False)
     # URL de ping (healthchecks.io): lleva un UUID que funciona como secreto.
     deadman_url: str = field(default="", repr=False)
+    # Carpeta del Agente A congelado (ADR 0009). None: la sombra mide solo costos.
+    frozen_dir: Path | None = None
 
     def __post_init__(self) -> None:
         if not self.order_sizes_usdt or min(self.order_sizes_usdt) <= 0:
@@ -105,6 +107,8 @@ class ShadowConfig:
         opciones["telegram_token"] = leer("TELEGRAM_TOKEN") or ""
         opciones["telegram_chat_id"] = leer("TELEGRAM_CHAT_ID") or ""
         opciones["deadman_url"] = leer("DEADMAN_URL") or ""
+        if (valor := leer("FROZEN_DIR")) is not None:
+            opciones["frozen_dir"] = Path(valor)
         return cls(**opciones)  # type: ignore[arg-type]
 
     def describe(self) -> dict[str, object]:
@@ -120,4 +124,5 @@ class ShadowConfig:
             "market_data_url": self.market_data_url,
             "alerts_enabled": self.alerts_enabled,
             "deadman_enabled": self.deadman_enabled,
+            "frozen_dir": str(self.frozen_dir) if self.frozen_dir else None,
         }
