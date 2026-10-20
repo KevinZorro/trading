@@ -47,3 +47,34 @@ services:
     command: ["python", "-m", "live.watchdog"]
     volumes:
       - ${SHADOW_HOST_DATA:-/var/lib/shadow}:/data:ro
+
+  # Grabador de noticias GDELT (Etapa 4, PR L1). Servicio e imagen propios, sin
+  # `.env` ni secretos: desplegarlo NO toca `shadow` ni `watchdog` (la sombra tiene un
+  # reloj de 30 dias en marcha). Levantar SOLO este servicio, ver
+  # docs/despliegue-noticias.md: `docker compose up -d --no-deps noticias`.
+  noticias:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: noticias:latest
+    restart: unless-stopped
+    command: ["python", "-m", "live.news"]
+    environment:
+      NEWS_DATA_DIR: /news
+      NEWS_GIT_SHA: ${GIT_SHA:-unknown}
+    volumes:
+      - ${NEWS_HOST_DATA:-/var/lib/news}:/news
+    # La VM tiene 1 GiB y la sombra carga torch: el grabador no puede quitarle memoria.
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-m", "live.news", "--health"]
+      interval: 5m
+      timeout: 20s
+      start_period: 2m
+      retries: 1
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
