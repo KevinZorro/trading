@@ -202,7 +202,7 @@ de validación y Tarea C) cerradas. La Etapa 3.5 está en curso. Las reglas y la
 etapas están en [`CLAUDE.md`](CLAUDE.md); aquí se rastrea cada hito hasta su PR y su
 evidencia en el repositorio.
 
-Estado al 2026-10-19. Los números de PR son de GitHub; "mergeado" quiere decir que
+Estado al 2026-10-20. Los números de PR son de GitHub; "mergeado" quiere decir que
 está en `main`. Cuando cambia un hito, se actualiza esta tabla en el mismo PR.
 
 ### Etapas 1 a 3: simulador, entorno y Agente A
@@ -250,7 +250,7 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Grabador de errores de testnet (-1013, -2010, -1022) | PR 7a | #40 | mergeado | `scripts/grabar_respuestas_testnet.py`, `tests/live/test_grabador_testnet.py` |
 | PR 8a: grabador del WebSocket de testnet y guard `wss` | ADR 0007 §7 | #41 | mergeado | `scripts/grabar_ws_testnet.py`, `tests/live/test_grabador_ws_testnet.py`, `tests/live/respuestas/testnet_ws/` |
 | Grabaciones reales de -1013, -2010 y -1022 | PR 7a | #42 | mergeado | `tests/live/respuestas/testnet/err_*.json` |
-| Venue de testnet maneja -1013 y -2010 como rechazo con motivo; -1022 se propaga | PR 7b | #45 | abierto (borrador) | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py` |
+| Venue de testnet maneja -1013 y -2010 como rechazo con motivo; -1022 se propaga | PR 7b | #45 | mergeado | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py` |
 | PR 8b: WebSocket como observador (comisión real, fills tras caída) | ADR 0007 §7 | #44 | mergeado | `src/live/testnet_ws.py`; lo grabado en 8a: `tests/live/respuestas/testnet_ws/` |
 | Persistir el estado de `RiskLayer` ante reinicio | deuda de PR 5b | sin PR | pendiente | `src/risk/layer.py` no persiste estado |
 
@@ -259,17 +259,20 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Hito | Estado |
 |---|---|
 | Despliegue | Hecho el 2026-10-19 en una VM del proveedor de nube; el proceso corre en Docker (`docs/despliegue-sombra.md`). |
-| Reloj de 30 días | Arranca con el primer snapshot válido de las 00:00:30 UTC, esperado el 2026-10-20. |
+| Reloj de 30 días | **En marcha.** Primer snapshot diario válido: 2026-10-20 00:00:30 UTC, con los diez Agentes A cargados sin errores (semillas 11, 23, 37, 41, 59, 67, 73, 89, 97 y 101). Ventana: 2026-10-20 a ~2026-11-18. |
+| Evaluación de la predicción | **Abierta.** Sin evaluar hasta completar la ventana. |
 | Veredicto | Menos de 25 de los 30 snapshots válidos significa **NO EVALUABLE** (ADR 0007 §6). La predicción sobre el spread está pre-registrada ahí y no se edita. |
 
 ### Etapa 4 y prerrequisitos de la Etapa 5
 
-El plan de la etapa (fuente de noticias, anti-lookahead, partición en PRs y
-decisiones de Kevin del 2026-10-20) vive fuera del repositorio, en la carpeta
-compartida del proyecto (`etapa4-noticias/PLAN.md`). Aquí se rastrean los PRs.
+El plan de la etapa vive fuera del repositorio, en los archivos del proyecto
+(`etapa4-noticias/PLAN.md`): fuente GDELT GKG 2.0 crudo, tema `ECON_BITCOIN`, tono de
+GDELT + FinBERT, `pub_time` = rótulo del lote + 30 min. La pista L es el grabador en
+vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
+| L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | mergeado | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
 | P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | en revisión | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
 | P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | sin PR | pendiente | — |
 
@@ -277,7 +280,7 @@ compartida del proyecto (`etapa4-noticias/PLAN.md`). Aquí se rastrean los PRs.
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | planeada (2026-10-20); se desarrolla en paralelo con la sombra. La grilla del presupuesto sobre 4b se declara en el ADR 0010 (tabla de arriba) |
+| 4. Pipeline de noticias con validación point-in-time | en curso: L1 (grabador en vivo) mergeado en #47; la grilla del presupuesto sobre 4b se declara en el ADR 0010 (#48). Ver la tabla de la Etapa 4 |
 | 5. Agente B y comparación controlada contra A | sin empezar |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
