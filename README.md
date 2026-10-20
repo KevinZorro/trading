@@ -262,11 +262,22 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Reloj de 30 días | Arranca con el primer snapshot válido de las 00:00:30 UTC, esperado el 2026-10-20. |
 | Veredicto | Menos de 25 de los 30 snapshots válidos significa **NO EVALUABLE** (ADR 0007 §6). La predicción sobre el spread está pre-registrada ahí y no se edita. |
 
+### Etapa 4 y prerrequisitos de la Etapa 5
+
+El plan de la etapa (fuente de noticias, anti-lookahead, partición en PRs y
+decisiones de Kevin del 2026-10-20) vive fuera del repositorio, en la carpeta
+compartida del proyecto (`etapa4-noticias/PLAN.md`). Aquí se rastrean los PRs.
+
+| Hito | Origen | PR | Estado | Evidencia |
+|---|---|---|---|---|
+| P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #PRNUM | en revisión | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
+| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | sin PR | pendiente | — |
+
 ### Etapas siguientes
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | sin empezar; se desarrolla en paralelo con la sombra. Antes de la Etapa 5, calibrar el presupuesto de entrenamiento sobre el fixture 4b con la grilla declarada en un ADR |
+| 4. Pipeline de noticias con validación point-in-time | planeada (2026-10-20); se desarrolla en paralelo con la sombra. La grilla del presupuesto sobre 4b se declara en el ADR 0010 (tabla de arriba) |
 | 5. Agente B y comparación controlada contra A | sin empezar |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
