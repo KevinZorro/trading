@@ -76,6 +76,11 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   ADR **antes** de correrla. Hasta entonces, todo resultado sobre datos reales declara
   que la política está subentrenada y que valida el pipeline, no concluye sobre el
   mercado.
+- **La calibración del presupuesto (ADR 0010) no usa los caminos del protocolo** y sus
+  umbrales son los de `main` salvo `level_4_min_paths = 5`, que es un override local a
+  `calibration.thresholds()`: el default de `ProtocolThresholds` sigue siendo 10 y lo fija
+  un test. La unidad reanudable es un entrenamiento; `calibrate run` para en el primer
+  punto que pasa y se niega a correr si el SHA256 del ADR no es el sellado.
 - **Entrenar y juzgar son dos comandos** (`agents.cli arm` / `assemble`). Los
   criterios se aplican siempre sobre resultados guardados: revisar un umbral no
   exige reentrenar, y si alguien lo cambia después de ver los números, se ve en

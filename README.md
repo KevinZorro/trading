@@ -273,8 +273,8 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
 | L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | mergeado | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
-| P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | en revisión | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
-| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | sin PR | pendiente | — |
+| P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | mergeado | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
+| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | PR pendiente | script listo (la corrida y la confirmación siguen pendientes) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
 
 ### Etapas siguientes
 

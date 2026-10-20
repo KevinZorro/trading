@@ -253,6 +253,52 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_calibrate(args: argparse.Namespace) -> int:
+    """ADR 0010: calibra el presupuesto de entrenamiento sobre 4b."""
+    from agents import calibration as cal
+
+    out = Path(args.out)
+    if args.action == "worker":
+        # Proceso hijo de ``run``: ya paso por la verificacion del sello.
+        unidades = cal.shard(
+            cal.point_units(args.point), *(int(x) for x in args.shard.split("/"))
+        )
+        cal.run_units(out, unidades)
+        return 0
+    if args.action == "bench":
+        unidad = cal.point_units("G1")[0]
+        registro = cal.train_unit(unidad, timesteps=args.timesteps)
+        por_paso = registro["wall_seconds"] / args.timesteps
+        print(f"{args.timesteps} pasos en {registro['wall_seconds']:.0f} s")
+        for nombre, pasos in cal.GRID:
+            horas = cal.projected_hours(
+                por_paso, pasos, len(cal.point_units(nombre)), args.workers
+            )
+            print(
+                f"  {nombre} ({pasos} pasos): {horas:.1f} h con {args.workers} procesos"
+            )
+        for nombre, pasos in cal.GRID:
+            horas = cal.projected_hours(
+                por_paso, pasos, cal.CONFIRMATION_TRAININGS, args.workers
+            )
+            print(
+                f"  confirmacion con {nombre}: {horas:.0f} h, {args.workers} procesos"
+            )
+        return 0
+    adr = cal.verify_adr(Path.cwd())
+    cal.acquire_seal(out, adr)
+    if args.action == "run":
+        resultado = cal.decide(
+            out, run=lambda punto: cal.run_point(out, punto, args.workers)
+        )
+    else:
+        resultado = cal.decide(out)
+    ruta = cal.finalize(out, resultado)
+    print(cal.render(resultado))
+    print(f"\nescrito {ruta}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agents.cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -297,6 +343,17 @@ def main(argv: list[str] | None = None) -> int:
         help="continua una corrida interrumpida con la misma configuracion sellada",
     )
     w.set_defaults(func=cmd_walkforward)
+
+    c = sub.add_parser(
+        "calibrate", help="ADR 0010: presupuesto de entrenamiento sobre 4b"
+    )
+    c.add_argument("action", choices=["bench", "run", "report", "worker"])
+    c.add_argument("--out", default="results/calibracion")
+    c.add_argument("--workers", type=int, default=4)
+    c.add_argument("--timesteps", type=int, default=20_000, help="solo para bench")
+    c.add_argument("--point", default=None, help="interno, de worker")
+    c.add_argument("--shard", default="0/1", help="interno, de worker")
+    c.set_defaults(func=cmd_calibrate)
 
     args = parser.parse_args(argv)
     resultado: int = args.func(args)

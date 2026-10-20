@@ -35,7 +35,7 @@ from typing import Any
 import numpy as np
 
 from agents.policy import Policy
-from agents.ppo import PPOConfig, action_saturation, train_ppo
+from agents.ppo import PPOConfig, SB3Policy, action_saturation, train_ppo
 from agents.runner import (
     EpisodeOutcome,
     build_env,
@@ -173,7 +173,7 @@ class ProtocolThresholds:
 #: significa "el agente no movio la accion" y la ausencia significa "esta corrida
 #: es de antes de que se midiera". Confundirlos meteria observaciones inventadas
 #: en la distribucion. Mismo criterio que ``win_rate`` sin trades cerrados.
-CAMPOS_OPCIONALES: tuple[str, ...] = ("action_std",)
+CAMPOS_OPCIONALES: tuple[str, ...] = ("action_std", "policy_sigma")
 
 
 @dataclass(frozen=True)
@@ -217,6 +217,9 @@ class SeedRun:
     costs_paid: float
     gap: float
     ruined: bool
+    #: sigma de la politica al terminar el entrenamiento. ``None`` si la politica
+    #: no es gaussiana (baselines, politicas inyectadas) o el resultado es previo.
+    policy_sigma: float | None = None
 
     def describe(self) -> dict[str, object]:
         return dict(vars(self))
@@ -382,6 +385,7 @@ def _seed_run(
     report: RunReport,
     ceilings: Ceilings,
     initial_cash: float,
+    policy_sigma: float | None = None,
 ) -> SeedRun:
     equity = np.asarray(outcome.result.equity, dtype=np.float64)
     crecimiento = float(np.log(equity[-1] / equity[0]))
@@ -412,6 +416,7 @@ def _seed_run(
         costs_paid=report.costs.total_costs_paid,
         gap=report.costs.gap,
         ruined=outcome.ruined,
+        policy_sigma=policy_sigma,
     )
 
 
@@ -505,7 +510,10 @@ def run_arm(
             politica = policy_factory(train, semilla)
         salida = run_policy(construir(validacion), politica, seed=semilla)
         reporte = evaluate_run(salida.result)
-        corridas.append(_seed_run(semilla, salida, reporte, techos, initial_cash))
+        sigma = politica.sigma() if isinstance(politica, SB3Policy) else None
+        corridas.append(
+            _seed_run(semilla, salida, reporte, techos, initial_cash, sigma)
+        )
 
     distribuciones = _distribuciones(
         tuple(corridas), allow_fewer_seeds=allow_fewer_seeds
