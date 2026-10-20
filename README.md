@@ -263,20 +263,24 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Evaluación de la predicción | **Abierta.** Sin evaluar hasta completar la ventana. |
 | Veredicto | Menos de 25 de los 30 snapshots válidos significa **NO EVALUABLE** (ADR 0007 §6). La predicción sobre el spread está pre-registrada ahí y no se edita. |
 
-### Etapa 4: pipeline de noticias
+### Etapa 4 y prerrequisitos de la Etapa 5
 
-Plan de la etapa (fuera del repo, en los archivos del proyecto) (fuente GDELT GKG 2.0 crudo, tema `ECON_BITCOIN`, tono de
-GDELT + FinBERT, pub_time = rótulo del lote + 30 min). Pista L es el grabador en vivo.
+El plan de la etapa vive fuera del repositorio, en los archivos del proyecto
+(`etapa4-noticias/PLAN.md`): fuente GDELT GKG 2.0 crudo, tema `ECON_BITCOIN`, tono de
+GDELT + FinBERT, `pub_time` = rótulo del lote + 30 min. La pista L es el grabador en
+vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
-| L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | en revisión | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
+| L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | mergeado | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
+| P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | en revisión | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
+| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | sin PR | pendiente | — |
 
 ### Etapas siguientes
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | en curso: L1 (grabador en vivo) en el PR #47; ver la tabla de la Etapa 4. Antes de la Etapa 5, calibrar el presupuesto de entrenamiento sobre el fixture 4b con la grilla declarada en un ADR |
+| 4. Pipeline de noticias con validación point-in-time | en curso: L1 (grabador en vivo) mergeado en #47; la grilla del presupuesto sobre 4b se declara en el ADR 0010 (#48). Ver la tabla de la Etapa 4 |
 | 5. Agente B y comparación controlada contra A | sin empezar |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
