@@ -202,7 +202,7 @@ de validación y Tarea C) cerradas. La Etapa 3.5 está en curso. Las reglas y la
 etapas están en [`CLAUDE.md`](CLAUDE.md); aquí se rastrea cada hito hasta su PR y su
 evidencia en el repositorio.
 
-Estado al 2026-10-19. Los números de PR son de GitHub; "mergeado" quiere decir que
+Estado al 2026-10-20. Los números de PR son de GitHub; "mergeado" quiere decir que
 está en `main`. Cuando cambia un hito, se actualiza esta tabla en el mismo PR.
 
 ### Etapas 1 a 3: simulador, entorno y Agente A
@@ -250,7 +250,7 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Grabador de errores de testnet (-1013, -2010, -1022) | PR 7a | #40 | mergeado | `scripts/grabar_respuestas_testnet.py`, `tests/live/test_grabador_testnet.py` |
 | PR 8a: grabador del WebSocket de testnet y guard `wss` | ADR 0007 §7 | #41 | mergeado | `scripts/grabar_ws_testnet.py`, `tests/live/test_grabador_ws_testnet.py`, `tests/live/respuestas/testnet_ws/` |
 | Grabaciones reales de -1013, -2010 y -1022 | PR 7a | #42 | mergeado | `tests/live/respuestas/testnet/err_*.json` |
-| Venue de testnet maneja -1013 y -2010 como rechazo con motivo; -1022 se propaga | PR 7b | #45 | abierto (borrador) | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py` |
+| Venue de testnet maneja -1013 y -2010 como rechazo con motivo; -1022 se propaga | PR 7b | #45 | mergeado | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py` |
 | PR 8b: WebSocket como observador (comisión real, fills tras caída) | ADR 0007 §7 | #44 | mergeado | `src/live/testnet_ws.py`; lo grabado en 8a: `tests/live/respuestas/testnet_ws/` |
 | Persistir el estado de `RiskLayer` ante reinicio | deuda de PR 5b | sin PR | pendiente | `src/risk/layer.py` no persiste estado |
 
@@ -259,7 +259,8 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Hito | Estado |
 |---|---|
 | Despliegue | Hecho el 2026-10-19 en una VM del proveedor de nube; el proceso corre en Docker (`docs/despliegue-sombra.md`). |
-| Reloj de 30 días | Arranca con el primer snapshot válido de las 00:00:30 UTC, esperado el 2026-10-20. |
+| Reloj de 30 días | **En marcha.** Primer snapshot diario válido: 2026-10-20 00:00:30 UTC, con los diez Agentes A cargados sin errores (semillas 11, 23, 37, 41, 59, 67, 73, 89, 97 y 101). Ventana: 2026-10-20 a ~2026-11-18. |
+| Evaluación de la predicción | **Abierta.** Sin evaluar hasta completar la ventana. |
 | Veredicto | Menos de 25 de los 30 snapshots válidos significa **NO EVALUABLE** (ADR 0007 §6). La predicción sobre el spread está pre-registrada ahí y no se edita. |
 
 ### Etapas siguientes
