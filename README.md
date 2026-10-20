@@ -270,13 +270,13 @@ GDELT + FinBERT, pub_time = rótulo del lote + 30 min). Pista L es el grabador e
 
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
-| L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #TBD | en revisión | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
+| L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | en revisión | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
 
 ### Etapas siguientes
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | en curso: L1 (grabador en vivo) en el PR #TBD; ver la tabla de la Etapa 4. Antes de la Etapa 5, calibrar el presupuesto de entrenamiento sobre el fixture 4b con la grilla declarada en un ADR |
+| 4. Pipeline de noticias con validación point-in-time | en curso: L1 (grabador en vivo) en el PR #47; ver la tabla de la Etapa 4. Antes de la Etapa 5, calibrar el presupuesto de entrenamiento sobre el fixture 4b con la grilla declarada en un ADR |
 | 5. Agente B y comparación controlada contra A | sin empezar |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
