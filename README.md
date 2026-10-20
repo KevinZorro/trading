@@ -270,7 +270,7 @@ compartida del proyecto (`etapa4-noticias/PLAN.md`). Aquí se rastrean los PRs.
 
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
-| P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #PRNUM | en revisión | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
+| P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | en revisión | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
 | P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | sin PR | pendiente | — |
 
 ### Etapas siguientes
