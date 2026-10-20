@@ -38,3 +38,38 @@ def test_dockerignore_deja_los_secretos_fuera_de_la_imagen() -> None:
     lineas = (RAIZ / ".dockerignore").read_text().splitlines()
     assert ".env" in lineas
     assert ".git" in lineas
+
+
+def _servicio(nombre: str) -> str:
+    """Texto del servicio ``nombre`` en el compose (hasta el siguiente servicio)."""
+    m = re.search(rf"^  {nombre}:\n((?:    .*\n|\n)+)", COMPOSE, re.MULTILINE)
+    assert m, f"falta el servicio {nombre}"
+    return m.group(1)
+
+
+def test_noticias_es_un_servicio_aparte_con_imagen_propia() -> None:
+    noticias = _servicio("noticias")
+    assert "image: noticias:latest" in noticias
+    # Si compartiera la etiqueta, construirlo re-etiquetaria la imagen de la sombra.
+    assert "shadow:latest" not in noticias
+    assert "<<: *comun" not in noticias
+    assert "depends_on" not in noticias
+
+
+def test_noticias_no_usa_env_ni_monta_los_datos_de_la_sombra() -> None:
+    noticias = _servicio("noticias")
+    assert "env_file" not in noticias
+    assert "SHADOW_" not in noticias
+    assert "shadow" not in noticias.replace("la sombra", "")  # ni rutas ni variables
+
+
+def test_noticias_reinicia_solo_tiene_tope_de_memoria_y_healthcheck() -> None:
+    noticias = _servicio("noticias")
+    assert "restart: unless-stopped" in noticias
+    assert re.search(r"mem_limit: \d+m", noticias)
+    assert '"live.news", "--health"' in noticias
+
+
+def test_los_servicios_existentes_siguen_sin_depender_de_noticias() -> None:
+    for nombre in ("shadow", "watchdog"):
+        assert "noticias" not in _servicio(nombre)

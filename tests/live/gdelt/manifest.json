@@ -1,0 +1,15 @@
+{
+  "script": "grabado a mano con curl desde data.gdeltproject.org (lote 15 min real); recorte descrito en `trim`",
+  "files": {
+    "20261020011500.gkg.csv.zip": {
+      "source_url": "https://data.gdeltproject.org/gdeltv2/20261020011500.gkg.csv.zip",
+      "source_md5": "c71bea34a26f26adf0f34e636a8d8e9b",
+      "source_bytes": 4280961,
+      "source_rows": 1013,
+      "source_last_modified": "Tue, 20 Oct 2026 01:03:41 GMT",
+      "received_at_utc": "2026-10-20T01:41:00Z",
+      "trim": "5 de 1013 filas: las 3 con ECON_BITCOIN en V2Themes (ids -345, -443, -973) y 2 sin el tema (ids -0 y -1). Columnas 9, 10, 17, 23 y 24 (ubicaciones, GCAM, nombres, montos) vaciadas para reducir tamano; el resto de cada fila es el original",
+      "sha256": "ae6ca6d364ced44a91503007ae881c447dc0d50d7b621f58d1e744c5ec177039"
+    }
+  }
+}
