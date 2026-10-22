@@ -198,11 +198,13 @@ Despliegue en VPS con Docker, watchdog y NTP: `docs/despliegue-sombra.md`.
 ## Estado y matriz de trazabilidad
 
 Etapas 1 (simulador, baselines y métricas), 2 (entorno Gymnasium) y 3 (Agente A, protocolo
-de validación y Tarea C) cerradas. La Etapa 3.5 está en curso. Las reglas y la lista de
+de validación y Tarea C) cerradas. La Etapa 3.5 (infraestructura en vivo mínima) está
+cerrada desde 2026-10-19; la sombra de costos sigue corriendo su ventana de 30 días. La
+Etapa 4 está en curso. Las reglas y la lista de
 etapas están en [`CLAUDE.md`](CLAUDE.md); aquí se rastrea cada hito hasta su PR y su
 evidencia en el repositorio.
 
-Estado al 2026-10-20. Los números de PR son de GitHub; "mergeado" quiere decir que
+Estado al 2026-10-22. Los números de PR son de GitHub; "mergeado" quiere decir que
 está en `main`. Cuando cambia un hito, se actualiza esta tabla en el mismo PR.
 
 ### Etapas 1 a 3: simulador, entorno y Agente A
@@ -273,15 +275,16 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
 | L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | mergeado | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
-| N2: descarga histórica de GDELT al formato del grabador, reanudable y con MD5 | Plan Etapa 4, pista N | #51 | en revisión | `src/data/gdelt_history.py`, `scripts/descargar_gdelt.py`, `docs/descarga-gdelt.md`, `tests/data/test_gdelt_history.py`, `tests/data/test_gdelt_history_leakage.py` |
+| N1: esquema, validación y carga de noticias con la regla de alineación | Plan Etapa 4, pista N | #49 | mergeado | `src/data/news.py`, `tests/data/test_news.py` |
+| N2: descarga histórica de GDELT al formato del grabador, reanudable y con MD5 | Plan Etapa 4, pista N | #51 | mergeado (la descarga completa sigue en curso) | `src/data/gdelt_history.py`, `scripts/descargar_gdelt.py`, `docs/descarga-gdelt.md`, `tests/data/test_gdelt_history.py`, `tests/data/test_gdelt_history_leakage.py` |
 | P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | mergeado | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
-| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50 | script listo (la corrida y la confirmación siguen pendientes) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
+| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | script mergeado (la corrida y la confirmación siguen en curso; #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
 
 ### Etapas siguientes
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | en curso: L1 (grabador en vivo) mergeado en #47; la grilla del presupuesto sobre 4b se declara en el ADR 0010 (#48). Ver la tabla de la Etapa 4 |
+| 4. Pipeline de noticias con validación point-in-time | en curso: mergeados L1 (#47), ADR 0010 (#48), N1 (#49), P2 (#50, #52, #53) y N2 (#51). Ver la tabla de la Etapa 4 |
 | 5. Agente B y comparación controlada contra A | sin empezar |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
