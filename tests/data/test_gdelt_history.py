@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import shutil
 import zipfile
@@ -385,3 +386,24 @@ def test_dedupe_exige_orden_por_rotulo() -> None:
     eventos = [ev("a", "2022-03-10T00:15", BIDEN), ev("b", "2022-03-10T00:00", BIDEN)]
     with pytest.raises(DataValidationError, match="no decrecientes"):
         list(dedupe_first_seen(eventos))
+
+
+def test_fetch_batch_lectura_incompleta_se_reintenta() -> None:
+    """Medido en la descarga completa: IncompleteRead no es OSError y mataba todo."""
+    e = entrada(L1900, ZIP_2017)
+
+    class Corta:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def __call__(self, url: str) -> HttpResult:
+            self.n += 1
+            if self.n == 1:
+                raise http.client.IncompleteRead(b"abc", 100)
+            return ok(ZIP_2017)
+
+    srv = Corta()
+    r = fetch_batch(e, srv, retries=2, sleep=lambda s: None)
+    assert r is not None
+    assert r["status"] == "ok"
+    assert srv.n == 2
