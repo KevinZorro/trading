@@ -80,3 +80,10 @@ pasó"). El resumen y el manifest van al repositorio; los JSON de `units/` van a
   tiempo proyectado lo hace impráctico, la partición se propone antes de correr.
 - **Ningún punto pasa:** no se fija presupuesto y no se extiende la grilla; un ADR nuevo
   decide la segunda ronda.
+
+## Si torch falla con `WinError 1114` (c10.dll)
+
+En Windows, torch tiene que importarse antes que numpy y pandas. `agents/__init__`
+lo hace solo (`agents/_torch_first.py`); si aun así falla, instala o actualiza el
+Visual C++ Redistributable x64 (`winget install --id Microsoft.VCRedist.2015+.x64 -e`)
+y abre una terminal nueva.

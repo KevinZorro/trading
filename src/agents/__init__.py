@@ -7,6 +7,7 @@ entorno sin el grupo instalado, incluido el job principal de CI. Se importa por
 su ruta completa: ``from agents.ppo import train_ppo``.
 """
 
+from agents import _torch_first  # noqa: F401  (debe ir antes que numpy)
 from agents.baselines import BuyAndHold, MovingAverageCross, RandomAgent
 from agents.experiment import ExperimentLog, ExperimentRecord, jsonable
 from agents.policy import (
