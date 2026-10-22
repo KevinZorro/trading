@@ -31,6 +31,7 @@ articulos dedupica al leer.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -204,7 +205,7 @@ def fetch_batch(
             if hashlib.md5(r.body, usedforsecurity=False).hexdigest() != entry.md5:
                 continue
             return ok_record(entry, read_batch(r.body, theme), r.last_modified)
-        except (OSError, zipfile.BadZipFile, EOFError):
+        except (OSError, http.client.HTTPException, zipfile.BadZipFile, EOFError):
             continue
     return None
 
