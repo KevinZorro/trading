@@ -59,6 +59,14 @@ def test_la_politica_entrenada_satisface_el_protocolo(entrenado) -> None:  # typ
     assert politica.name.startswith("ppo")
 
 
+def test_sigma_de_la_politica_es_positivo_y_finito(entrenado) -> None:  # type: ignore[no-untyped-def]
+    """ADR 0010 §5: el sigma es evidencia de que la exploracion se apago."""
+    politica, _, _ = entrenado
+    sigma = politica.sigma()
+    assert np.isfinite(sigma)
+    assert sigma > 0.0
+
+
 def test_las_acciones_caen_en_el_rango_del_motor(entrenado) -> None:  # type: ignore[no-untyped-def]
     politica, construir, validacion = entrenado
     salida = run_policy(construir(validacion), politica)
