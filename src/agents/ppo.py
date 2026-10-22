@@ -169,6 +169,14 @@ class SB3Policy:
     def describe(self) -> dict[str, object]:
         return {"policy": "sb3_ppo", "recurrent": self._recurrent, "label": self._label}
 
+    def sigma(self) -> float:
+        """Desvio de la politica gaussiana al terminar: ``exp(log_std)`` medio.
+
+        Es la evidencia de que la exploracion se apago (ADR 0005, ADR 0010 §5).
+        """
+        log_std = self._model.policy.log_std.detach().cpu().numpy()
+        return float(np.exp(log_std).mean())
+
     def save(self, path: str) -> None:
         self._model.save(path)
 
