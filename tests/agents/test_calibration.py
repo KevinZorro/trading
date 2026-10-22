@@ -100,6 +100,16 @@ def test_el_adr_en_disco_es_el_sellado() -> None:
     assert cal.verify_adr(RAIZ) == cal.ADR_SHA256
 
 
+def test_el_adr_con_finales_de_linea_de_windows_sigue_siendo_el_sellado(
+    tmp_path: Path,
+) -> None:
+    """Medido en el PC de Kevin: git con autocrlf entrega \\r\\n y el SHA256 cambia."""
+    destino = tmp_path / cal.ADR_PATH
+    destino.parent.mkdir(parents=True)
+    destino.write_bytes((RAIZ / cal.ADR_PATH).read_bytes().replace(b"\n", b"\r\n"))
+    assert cal.verify_adr(tmp_path) == cal.ADR_SHA256
+
+
 def test_un_adr_modificado_no_corre(tmp_path: Path) -> None:
     destino = tmp_path / cal.ADR_PATH
     destino.parent.mkdir(parents=True)

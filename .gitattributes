@@ -6,3 +6,5 @@ datasets/** -text -diff
 tests/live/respuestas/** -text
 # Los pesos congelados se verifican por SHA256 contra su manifest: sin conversion de fin de linea.
 frozen/** -text
+# Los ADR sellados se verifican por SHA256 (0006, 0010): sin conversion de fin de linea.
+docs/adr/** -text

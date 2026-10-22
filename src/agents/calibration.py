@@ -115,7 +115,10 @@ def config_digest() -> str:
 
 
 def verify_adr(root: Path, expected: str = ADR_SHA256) -> str:
-    real = hashlib.sha256((root / ADR_PATH).read_bytes()).hexdigest()
+    # El sello es del texto con \n: en Windows git puede entregar \r\n (autocrlf)
+    # y el mismo ADR tendria otro SHA256. Se normaliza antes de comparar.
+    crudo = (root / ADR_PATH).read_bytes().replace(b"\r\n", b"\n")
+    real = hashlib.sha256(crudo).hexdigest()
     if real != expected:
         raise CalibrationError(
             f"el ADR 0010 en disco tiene SHA256 {real} y el sellado es {expected}: "
