@@ -87,3 +87,24 @@ En Windows, torch tiene que importarse antes que numpy y pandas. `agents/__init_
 lo hace solo (`agents/_torch_first.py`); si aun así falla, instala o actualiza el
 Visual C++ Redistributable x64 (`winget install --id Microsoft.VCRedist.2015+.x64 -e`)
 y abre una terminal nueva.
+
+## Resultado de la calibración (2026-10-23)
+
+Los cuatro puntos fallan 4b y **no se fija presupuesto** (ADR 0010 §4). La dispersión de la
+acción queda en 0,33 a 0,35 (máximo 0,15) aunque σ baja de 0,81 a 0,05. El resumen está en
+`results/calibracion/summary.json`; los JSON de `units/` van a un Release.
+
+## Diagnóstico (`calibrate diagnose`)
+
+Entrena 10 políticas a 120k pasos (5 caminos nuevos × 2 semillas, ~15 a 20 min con 3
+procesos) y mide de qué columnas de la observación depende la acción. La regla de lectura
+está declarada en el docstring de `src/agents/diagnosis.py`. En PowerShell de tu PC:
+
+```powershell
+git pull
+$w = Read-Host "Cuantos procesos en paralelo (los mismos de siempre)"
+$env:PYTHONPATH = "src"
+uv run --group rl python -m agents.cli calibrate diagnose --workers $w
+```
+
+Si se corta, relanza el mismo bloque. Pega la salida completa en el hilo.

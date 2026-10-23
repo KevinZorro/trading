@@ -236,9 +236,12 @@ def shard(units: Sequence[Unit], index: int, total: int) -> tuple[Unit, ...]:
     return tuple(u for i, u in enumerate(units) if i % total == index)
 
 
-def run_point(out: Path, point: str, workers: int) -> None:
+def run_point(
+    out: Path, point: str, workers: int, units: Sequence[Unit] | None = None
+) -> None:
     """Un punto de la grilla en ``workers`` procesos, de un solo hilo cada uno."""
-    pendientes = [u for u in point_units(point) if not unit_path(out, u).exists()]
+    todas = units if units is not None else point_units(point)
+    pendientes = [u for u in todas if not unit_path(out, u).exists()]
     if not pendientes:
         return
     entorno = {**os.environ, "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
