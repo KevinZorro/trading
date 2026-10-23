@@ -1,0 +1,145 @@
+{
+  "_nota": "Resumen condensado de results/regularizacion/summary.json del PC de Kevin (corrida del 2026-10-23, Windows 11, AMD 8 nucleos, torch 2.14.0, SB3 2.7.0), transcrito del texto que pego en el hilo. Las cifras son las del archivo; se omiten las distribuciones por semilla. El summary completo, los 150 entrenamientos de units/ y su MANIFEST.json van al Release.",
+  "adr": "docs/adr/0011-segunda-ronda-de-calibracion-regularizacion.md",
+  "selected_rung": "R3",
+  "timesteps": 120000,
+  "baseline": "G1",
+  "baseline_found": true,
+  "rungs": [
+    {
+      "point": "R1",
+      "verdict": "FAIL",
+      "config": "lookback 1, learning_rate 1e-4, n_epochs 5",
+      "drift_t_median": 5.87,
+      "time_invested": {
+        "mean": 0.9183,
+        "t_statistic": 41.59,
+        "path_medians": [
+          0.9472,
+          0.9374,
+          0.8304,
+          0.9339,
+          0.9424
+        ]
+      },
+      "action_std": {
+        "mean": 0.1772,
+        "t_statistic": 6.21,
+        "path_medians": [
+          0.1317,
+          0.162,
+          0.2896,
+          0.1569,
+          0.1461
+        ]
+      },
+      "turnover_annualized_mean": 16.01,
+      "excess_log_growth_vs_always_long": {
+        "mean": -0.2075,
+        "t_statistic": -2.3
+      },
+      "policy_sigma_median": 0.9966,
+      "wall_seconds_median": 236.4,
+      "paired_vs_G1": {
+        "action_std": {
+          "mean": -0.1722,
+          "t_statistic": -4.81
+        },
+        "time_invested": {
+          "mean": 0.1121,
+          "t_statistic": 3.94
+        }
+      }
+    },
+    {
+      "point": "R2",
+      "verdict": "FAIL",
+      "config": "R1 + net_arch 32x32",
+      "drift_t_median": 5.87,
+      "time_invested": {
+        "mean": 0.6678,
+        "t_statistic": 16.53,
+        "path_medians": [
+          0.6282,
+          0.6071,
+          0.6735,
+          0.8221,
+          0.6082
+        ]
+      },
+      "action_std": {
+        "mean": 0.1903,
+        "t_statistic": 20.61,
+        "path_medians": [
+          0.1854,
+          0.18,
+          0.2128,
+          0.2094,
+          0.1638
+        ]
+      },
+      "turnover_annualized_mean": 24.39,
+      "excess_log_growth_vs_always_long": {
+        "mean": -0.9216,
+        "t_statistic": -6.22
+      },
+      "policy_sigma_median": 1.008,
+      "wall_seconds_median": 240.0,
+      "paired_vs_G1": {
+        "action_std": {
+          "mean": -0.1408,
+          "t_statistic": -6.89
+        },
+        "time_invested": {
+          "mean": -0.1193,
+          "t_statistic": -3.92
+        }
+      }
+    },
+    {
+      "point": "R3",
+      "verdict": "PASS",
+      "config": "R2 + gamma 0.9",
+      "drift_t_median": 5.87,
+      "time_invested": {
+        "mean": 0.9651,
+        "t_statistic": 113.81,
+        "path_medians": [
+          0.9691,
+          0.9763,
+          0.9318,
+          0.9776,
+          0.9707
+        ]
+      },
+      "action_std": {
+        "mean": 0.1109,
+        "t_statistic": 4.9,
+        "path_medians": [
+          0.0837,
+          0.0859,
+          0.2011,
+          0.0896,
+          0.094
+        ]
+      },
+      "turnover_annualized_mean": 7.91,
+      "excess_log_growth_vs_always_long": {
+        "mean": -0.1056,
+        "t_statistic": -2.82
+      },
+      "policy_sigma_median": 1.0013,
+      "wall_seconds_median": 246.9,
+      "paired_vs_G1": {
+        "action_std": {
+          "mean": -0.2106,
+          "t_statistic": -6.51
+        },
+        "time_invested": {
+          "mean": 0.1546,
+          "t_statistic": 6.72
+        }
+      }
+    }
+  ]
+}

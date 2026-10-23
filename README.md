@@ -282,7 +282,8 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | script mergeado (la corrida y la confirmación siguen en curso; #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
 | P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | mergeado; corrido (ningún grupo solo explica la rotación) | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
 | P3: segunda ronda de calibración, escalera de regularización declarada antes de correrla | ADR 0010 §4, diagnóstico de #57 | #60 | mergeado; escalera elegida (R1 a R3, sin penalización); sin correr | `docs/adr/0011-segunda-ronda-de-calibracion-regularizacion.md` |
-| P3b: script de la escalera R1 a R3 (`calibrate ladder`), pareado contra G1 | ADR 0011 | #61 | en revisión; sin correr | `src/agents/regularization.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_regularization.py` |
+| P3b: script de la escalera R1 a R3 (`calibrate ladder`), pareado contra G1 | ADR 0011 | #61 | mergeado; corrido: R1 y R2 fallan, **R3 pasa 4b** (`C*` = R3) | `src/agents/regularization.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_regularization.py` |
+| P3c: confirmación de `C*` = R3 con el protocolo completo, reanudable, y re-diagnóstico | ADR 0011 §5 y §6 | (este PR) | en revisión; sin correr | `src/agents/confirmation.py`, `results/regularizacion/summary.json`, `docs/calibracion-presupuesto.md`, `tests/agents/test_confirmation.py` |
 
 ### Etapas siguientes
 

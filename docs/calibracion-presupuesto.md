@@ -148,3 +148,52 @@ Pega en el hilo lo que imprime: una línea por peldaño con su veredicto, la dif
 contra G1 y su `t` entre caminos, y al final `C* = …` o "Ningún peldaño pasó". Si un
 peldaño pasa, la confirmación del protocolo completo necesita un PR aparte que la vuelva
 reanudable antes de correrla (ADR 0011 §7).
+
+## Resultado de la escalera (2026-10-23)
+
+R1 y R2 fallan y **R3 pasa 4b**: tiempo invertido 0,97, dispersión de la acción 0,111,
+rotación ~8 al año. Pareado contra G1, la dispersión baja 0,21 (`t` = −6,5) y el tiempo
+invertido sube 0,15 (`t` = +6,7). `C*` = R3 a 120 000 pasos. Resumen condensado en
+`results/regularizacion/summary.json`. La σ de la política queda en ~1,0 en los tres
+peldaños: la exploración no se apagó, y por eso el par 4a↔4b de la confirmación es el
+que decide si el agente reconoce el drift o compra por defecto.
+
+## Confirmación con `C*` (ADR 0011 §5)
+
+Re-corre el protocolo completo con R3 sobre los caminos y semillas registrados: 8 brazos
+de un camino × 10 semillas y 4 multicamino de 10 × 10, 480 entrenamientos, más 10 de
+re-diagnóstico. Cada entrenamiento deja su JSON en `results/confirmacion/units/`, así que
+**un corte solo pierde el entrenamiento en curso**. Al terminar arma los `arm_*.json` y
+`multipath_*.json` en `results/confirmacion/protocolo/` y los juzga `assemble`, como en
+la Etapa 3. Como R3 es el último peldaño, si 4b falla aquí no hay un peldaño siguiente
+que probar (ADR 0011 §5, regla 4).
+
+**Tiempo: unas 13 a 16 h con 3 procesos.** Los 370 entrenamientos MLP tardan ~4 min cada
+uno, y los 110 LSTM tardan más. Deja el PC encendido y sin suspensión. Puedes cortarlo
+de noche y relanzarlo al día siguiente.
+
+**1. Actualizar el repo (menos de 1 min).** En PowerShell de tu PC:
+
+```powershell
+cd RUTA_DE_TU_REPO   # la carpeta donde clonaste trading
+git fetch origin; git checkout main; git pull
+uv sync --frozen --group rl
+```
+
+**2. Lanzar o relanzar la confirmación.** Si se corta, vuelve a correr este mismo bloque:
+
+```powershell
+$w = Read-Host "Cuantos procesos en paralelo (los mismos de siempre)"
+$env:PYTHONPATH = "src"
+uv run --group rl python -m agents.cli calibrate confirm --workers $w
+```
+
+**3. Ver el veredicto sin entrenar nada:**
+
+```powershell
+$env:PYTHONPATH = "src"
+uv run --group rl python -m agents.cli calibrate confirm-report
+```
+
+Pega en el hilo lo que imprime: el reporte del protocolo nivel por nivel y la línea del
+re-diagnóstico. Si faltan entrenamientos, dice cuántos.

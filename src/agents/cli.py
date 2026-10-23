@@ -263,9 +263,12 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         "diagnose": "results/diagnostico",
         "ladder": "results/regularizacion",
         "ladder-report": "results/regularizacion",
+        "confirm": "results/confirmacion",
+        "confirm-report": "results/confirmacion",
     }.get(args.action, "results/calibracion")
     out = Path(args.out or por_defecto)
-    if args.action in ("worker", "diagnose"):
+    if args.action in ("worker", "diagnose", "confirm", "confirm-report"):
+        from agents import confirmation as conf
         from agents import diagnosis as dg
 
     if args.action == "worker":
@@ -273,6 +276,11 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         entrenar: Callable[[cal.Unit], dict[str, Any]] | None
         if args.point == dg.DIAGNOSIS_POINT:
             todas, entrenar = dg.diagnosis_units(), dg.train_unit
+        elif args.point == conf.REDIAGNOSIS_POINT:
+            todas = conf.rediagnosis_units()
+            entrenar = conf.train_rediagnosis_unit
+        elif conf.is_point(args.point):
+            todas, entrenar = conf.arm_units(args.point), conf.train_unit
         elif reg.is_rung(args.point):
             todas, entrenar = reg.rung_units(args.point), reg.train_unit
         else:
@@ -329,6 +337,31 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         print(reg.render(escalera))
         print(f"\nescrito {ruta}")
         return 0
+    if args.action in ("confirm", "confirm-report"):
+        # ADR 0011 seccion 5: protocolo completo con C*, reanudable.
+        cal.acquire_seal(out, reg.verify_adr(Path.cwd()), conf.config_digest())
+        rediagnostico = conf.rediagnosis_units()
+        if args.action == "confirm":
+            for brazo in conf.ARMS:
+                cal.run_point(
+                    out, brazo.point, args.workers, conf.arm_units(brazo.point)
+                )
+            cal.run_point(out, conf.REDIAGNOSIS_POINT, args.workers, rediagnostico)
+        destino = conf.collect(out)
+        conf.manifest(out)
+        if all(cal.unit_path(out, u).exists() for u in rediagnostico):
+            registros = cal.load_point(out, conf.REDIAGNOSIS_POINT, rediagnostico)
+            resumen_dg = dg.summarize_diagnosis(registros)
+            cal.write_atomic(out / "rediagnosis.json", jsonable(resumen_dg))
+            print(f"Re-diagnostico con {conf.CONFIRMED_RUNG}: {resumen_dg['reading']}")
+        procedencia = {
+            "adr": str(reg.ADR_PATH),
+            "adr_sha256": reg.ADR_SHA256,
+            "rung": conf.CONFIRMED_RUNG,
+        }
+        return cmd_assemble(
+            argparse.Namespace(out=str(destino), provenance=json.dumps(procedencia))
+        )
     adr = cal.verify_adr(Path.cwd())
     cal.acquire_seal(out, adr)
     if args.action == "run":
@@ -401,6 +434,8 @@ def main(argv: list[str] | None = None) -> int:
             "diagnose",
             "ladder",
             "ladder-report",
+            "confirm",
+            "confirm-report",
         ],
     )
     c.add_argument("--out", default=None)
