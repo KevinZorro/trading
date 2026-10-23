@@ -1,7 +1,7 @@
 # ADR 0011 — Segunda ronda de calibración: regularización del Agente A sobre 4b
 
-- **Estado:** borrador. **Kevin elige la escalera (sección 4) antes de que se selle.**
-  Se sella al mergearse, igual que el ADR 0010: el script de esta ronda no corre si
+- **Estado:** propuesto. Kevin eligió la escalera recomendada de la sección 4
+  (2026-10-23). Se sella al mergearse, igual que el ADR 0010: el script de esta ronda no corre si
   el SHA256 de este archivo no coincide con el sellado.
 - **Fecha:** 2026-10-23
 - **Contexto de etapa:** prerrequisito de la Etapa 5. Es la segunda ronda que el
@@ -171,7 +171,7 @@ señal en los niveles 1 y 2).
 - **Weight decay:** cumple el papel de L3 y no está en `PPOConfig`; agregarlo es
   interfaz nueva para una palanca que se solapa con otra.
 
-## 4. La escalera (Kevin elige)
+## 4. La escalera
 
 **Los peldaños son acumulativos y se corren en orden; se para en el primero que pasa.**
 Van de lo que menos cambia el problema a lo que más. Así el resultado es la
@@ -182,7 +182,7 @@ Acumulativos y no de a una, porque el diagnóstico ya mostró que ninguna causa 
 alcanza. Probar cada palanca aislada mediría efectos marginales que no deciden nada y
 multiplicaría los intentos.
 
-**Recomendada — tres peldaños, sin L5:**
+**Elegida por Kevin el 2026-10-23 — tres peldaños, sin L5:**
 
 | Peldaño | Configuración | Cambia respecto de G1 |
 |---|---|---|
@@ -193,7 +193,7 @@ multiplicaría los intentos.
 L1 no va sola porque el diagnóstico ya predice que no alcanza (0,19 con los diez
 retornos fijados). Correrla sola cuesta una hora y la respuesta esperada ya se sabe.
 
-**Alternativas:**
+**Alternativas que se consideraron y no se eligieron** (quedan como registro):
 
 - **B — cuatro peldaños, L1 sola primero.** Aísla el efecto del lookback y contrasta
   la predicción del diagnóstico. Cuesta ~1 h más en el peor caso.
@@ -246,7 +246,7 @@ En el PC de Kevin, con la medida de la ronda anterior: ~4 min por entrenamiento 
 | | Entrenamientos | Pared con 3 procesos |
 |---|---|---|
 | Un peldaño | 50 | ~1 h 10 min |
-| Escalera recomendada, peor caso (3 peldaños) | 150 | ~3 h 30 min |
+| Escalera elegida, peor caso (3 peldaños) | 150 | ~3 h 30 min |
 | Alternativa B, peor caso (4 peldaños) | 200 | ~4 h 40 min |
 | Confirmación a 120 000 | 480 | ~11 h, más el LSTM, que es más lento |
 
