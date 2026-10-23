@@ -279,8 +279,8 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | N1: esquema, validación y carga de noticias con la regla de alineación | Plan Etapa 4, pista N | #49 | mergeado | `src/data/news.py`, `tests/data/test_news.py` |
 | N2: descarga histórica de GDELT al formato del grabador, reanudable y con MD5 | Plan Etapa 4, pista N | #51 | mergeado (la descarga completa sigue en curso) | `src/data/gdelt_history.py`, `scripts/descargar_gdelt.py`, `docs/descarga-gdelt.md`, `tests/data/test_gdelt_history.py`, `tests/data/test_gdelt_history_leakage.py` |
 | P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | mergeado | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
-| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | script mergeado (la corrida y la confirmación siguen en curso; #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
-| P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | en revisión; sin correr | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
+| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | calibración corrida: G1-G4 fallan 4b, no se fija presupuesto (la segunda ronda va en un ADR nuevo; #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
+| P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | mergeado y corrido: ni posición ni banderas de orden causan la rotación; retornos y técnicos sí, ningún grupo solo basta | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
 
 ### Etapas siguientes
 
