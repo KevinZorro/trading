@@ -210,7 +210,7 @@ def test_ultima_linea_rota_por_una_caida_no_bloquea_el_reinicio(tmp_path: Path) 
     rec.collect(L0115)
     with open(tmp_path / "news-2026-10-20.jsonl", "ab") as f:
         f.write(b'{"type": "batch", "label": "2026-10-20T01:3')  # sin salto de linea
-    assert NewsStore(tmp_path, {}).last_label() == L0115
+    assert NewsStore(tmp_path, {}).labels(L0115) == {L0115}
     otro, _, _ = montar(
         tmp_path, "2026-10-20T01:50:00", {"20261020013000": "2026-10-20T01:40:00"}
     )
@@ -290,3 +290,43 @@ def test_config_invalida_falla_con_motivo(
 ) -> None:
     with pytest.raises(ConfigError, match=mensaje):
         NewsConfig.from_env(entorno)
+
+
+def test_lote_publicado_tarde_no_retiene_a_los_siguientes(tmp_path: Path) -> None:
+    # Medido el 2026-10-20: el 20:15 aparecio ~45 min tarde; el 20:30 y el 20:45 no.
+    disponible = {
+        "20261020200000": "2026-10-20T19:50:00",
+        "20261020201500": "2026-10-20T20:59:00",
+        "20261020203000": "2026-10-20T20:20:00",
+        "20261020204500": "2026-10-20T20:34:00",
+    }
+    rec, _, _ = montar(tmp_path, "2026-10-20T20:10:00", disponible)
+    rec.run(lambda: len(registros(tmp_path)) >= 5)  # cabecera + 4 lotes
+    por_rotulo = {str(r["label"])[11:16]: r for r in registros(tmp_path)[1:]}
+    # El 20:30 se resuelve a las 20:20 con su 404 de las 20:19, antes que el 20:15.
+    assert por_rotulo["20:30"]["received_at"] == "2026-10-20T20:20:00.000Z"
+    assert por_rotulo["20:30"]["last_404_at"] == "2026-10-20T20:19:00.000Z"
+    assert por_rotulo["20:45"]["received_at"] == "2026-10-20T20:34:00.000Z"
+    assert por_rotulo["20:15"]["received_at"] == "2026-10-20T20:59:00.000Z"
+    assert por_rotulo["20:15"]["last_404_at"] == "2026-10-20T20:58:00.000Z"
+    orden = [str(r["label"])[11:16] for r in registros(tmp_path)[1:]]
+    assert orden.index("20:30") < orden.index("20:15")  # el archivo sigue el orden real
+
+
+def test_reinicio_retoma_el_hueco_sin_repetir_lo_ya_grabado(tmp_path: Path) -> None:
+    previo = NewsStore(tmp_path, {})
+    for rotulo in ("2026-10-20T01:15:00.000Z", "2026-10-20T01:45:00.000Z"):
+        previo.append_batch(
+            t(rotulo[:19]), {"type": "batch", "label": rotulo, "status": "ok"}
+        )
+    rec, _, srv = montar(
+        tmp_path,
+        "2026-10-20T01:50:00",
+        {
+            "20261020013000": "2026-10-20T01:20:00",
+            "20261020020000": "2026-10-20T01:49:00",
+        },
+    )
+    assert rec.first_label() == t("2026-10-20T01:30:00")  # el 01:30 quedo sin grabar
+    rec.run(lambda: len(registros(tmp_path)) >= 5)  # cabecera + 2 previos + 2 nuevos
+    assert {rotulo for _, rotulo in srv.pedidos} == {"20261020013000", "20261020020000"}

@@ -34,7 +34,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -165,17 +165,21 @@ class NewsStore(SnapshotStore):
         cabecera = _linea(self._header) if not ruta.exists() else b""
         self._append(ruta, _linea(registro), cabecera=cabecera)
 
-    def last_label(self) -> np.datetime64 | None:
-        """Ultimo rotulo registrado, para retomar tras un reinicio."""
-        for ruta in sorted(self._dir.glob("news-*.jsonl"), reverse=True):
-            for linea in reversed(ruta.read_text().splitlines()):
+    def labels(self, desde: np.datetime64) -> set[np.datetime64]:
+        """Rotulos ya registrados (``ok`` o ``missing``) desde el dia de ``desde``."""
+        primer_dia = f"news-{dia(desde)}.jsonl"
+        salida: set[np.datetime64] = set()
+        for ruta in sorted(self._dir.glob("news-*.jsonl")):
+            if ruta.name < primer_dia:
+                continue
+            for linea in ruta.read_text().splitlines():
                 try:
                     dato = json.loads(linea)
                 except ValueError:
                     continue  # ultima linea rota por una caida
                 if isinstance(dato, dict) and dato.get("type") == "batch":
-                    return parse_ts(str(dato["label"]))
-        return None
+                    salida.add(parse_ts(str(dato["label"])))
+        return salida
 
 
 def _md5(ruta: Path) -> str:
@@ -195,6 +199,20 @@ def _leer_lote(ruta: Path, theme: str) -> GkgBatch:
             return parse_gkg(
                 io.TextIOWrapper(crudo, encoding="utf-8", errors="replace"), theme
             )
+
+
+def _clave(rotulo: np.datetime64) -> int:
+    return int(rotulo.astype("int64"))
+
+
+@dataclass
+class _Estado:
+    """Seguimiento de un rotulo en sondeo."""
+
+    primero: np.datetime64
+    ultimo_404: np.datetime64 | None = None
+    intentos: int = 0
+    error: Mapping[str, Any] = field(default_factory=dict)
 
 
 class NewsRecorder:
@@ -217,6 +235,7 @@ class NewsRecorder:
         self._tmp = config.data_dir / "descarga.tmp"
         self._missing_streak = 0
         self._last: Mapping[str, Any] = {}
+        self._grabados: set[np.datetime64] = set()
 
     def _intento(self, label: np.datetime64) -> tuple[str, dict[str, Any]]:
         """``("ok", campos)``, ``("404", {})`` o ``("error", {"last_error": ...})``."""
@@ -254,43 +273,47 @@ class NewsRecorder:
         finally:
             self._tmp.unlink(missing_ok=True)
 
+    def _paso(self, label: np.datetime64, est: _Estado) -> Mapping[str, Any] | None:
+        """Un intento. Devuelve el registro grabado si el lote quedo resuelto."""
+        antes = self._clock.now()
+        est.intentos += 1
+        resultado, campos = self._intento(label)
+        self._on_progress()
+        if resultado == "ok":
+            return self._cerrar(label, est, "ok", campos)
+        if resultado == "404":
+            est.ultimo_404 = antes  # cota inferior valida: no existia al pedirlo
+        else:
+            est.error = campos
+        limite = label + np.timedelta64(self._cfg.give_up_minutes, "m")
+        if resultado == "error":
+            limite = np.maximum(limite, est.primero + VENTANA_ERRORES)
+        if self._clock.now() >= limite:
+            return self._cerrar(label, est, "missing", est.error)
+        return None
+
     def collect(self, label: np.datetime64) -> Mapping[str, Any]:
-        """Sondea hasta tener el lote o declararlo ``missing``. Escribe un registro."""
-        cfg = self._cfg
-        primero = self._clock.now()
-        ultimo_404: np.datetime64 | None = None
-        intentos = 0
-        error: dict[str, Any] = {}
-        while True:
-            antes = self._clock.now()
-            intentos += 1
-            resultado, campos = self._intento(label)
-            self._on_progress()
-            if resultado == "ok":
-                estado, extra = "ok", campos
-                break
-            if resultado == "404":
-                ultimo_404 = antes  # cota inferior valida: no existia al pedirlo
-            else:
-                error = campos
-            limite = label + np.timedelta64(cfg.give_up_minutes, "m")
-            if resultado == "error":
-                limite = np.maximum(limite, primero + VENTANA_ERRORES)
-            if self._clock.now() >= limite:
-                estado, extra = "missing", error
-                break
-            self._sleep(cfg.poll_seconds)
+        """Sondea UN rotulo hasta resolverlo, bloqueando. ``run`` sondea varios."""
+        est = _Estado(self._clock.now())
+        while (registro := self._paso(label, est)) is None:
+            self._sleep(self._cfg.poll_seconds)
+        return registro
+
+    def _cerrar(
+        self, label: np.datetime64, est: _Estado, estado: str, extra: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
         registro = {
             "type": "batch",
             "schema": SCHEMA,
             "label": iso(label),
             "status": estado,
-            "first_attempt_at": iso(primero),
-            "last_404_at": iso(ultimo_404) if ultimo_404 is not None else None,
-            "attempts": intentos,
+            "first_attempt_at": iso(est.primero),
+            "last_404_at": iso(est.ultimo_404) if est.ultimo_404 is not None else None,
+            "attempts": est.intentos,
             **extra,
         }
         self._store.append_batch(label, registro)
+        self._grabados.add(label)
         self._missing_streak = self._missing_streak + 1 if estado == "missing" else 0
         self._last = registro
         self._heartbeat()
@@ -300,7 +323,7 @@ class NewsRecorder:
             extra={
                 "label": registro["label"],
                 "status": estado,
-                "attempts": intentos,
+                "attempts": est.intentos,
                 "rows_theme": registro.get("rows_theme"),
             },
         )
@@ -318,11 +341,20 @@ class NewsRecorder:
         )
 
     def first_label(self) -> np.datetime64:
-        """Retoma tras el ultimo registrado, con tope de recuperacion tras una caida."""
+        """Primer rotulo por resolver: el hueco mas viejo sin registrar, o el siguiente
+        al ultimo. Con tope de recuperacion tras una caida larga."""
         actual = floor_label(self._clock.now())
         piso = actual - self._cfg.max_catchup_batches * PASO
-        ultimo = self._store.last_label()
-        return actual if ultimo is None else np.maximum(ultimo + PASO, piso)
+        self._grabados = self._store.labels(piso)
+        if not self._grabados:
+            return actual
+        ultimo = max(self._grabados, key=_clave)
+        label = np.maximum(min(self._grabados, key=_clave), piso)
+        while label <= ultimo:
+            if label not in self._grabados:
+                return np.datetime64(label, "ns")
+            label = label + PASO
+        return np.datetime64(np.maximum(ultimo + PASO, piso), "ns")
 
     def _esperar(self, hasta: np.datetime64, stop: Callable[[], bool]) -> None:
         while not stop() and (resto := hasta - self._clock.now()) > np.timedelta64(
@@ -332,14 +364,28 @@ class NewsRecorder:
             self._heartbeat()
 
     def run(self, stop: Callable[[], bool]) -> None:
+        """Sondea en paralelo todos los rotulos pendientes.
+
+        Un lote que GDELT publica tarde (medido: ~45 min el 2026-10-20) no retiene a
+        los siguientes: cada uno conserva su propio ``last_404_at``.
+        """
         self._heartbeat()  # el healthcheck ve al proceso vivo desde el arranque
-        label = self.first_label()
+        siguiente = self.first_label()
+        lead = np.timedelta64(self._cfg.lead_minutes, "m")
+        pendientes: dict[np.datetime64, _Estado] = {}
         while not stop():
-            self._esperar(label - np.timedelta64(self._cfg.lead_minutes, "m"), stop)
-            if stop():
-                break
-            self.collect(label)
-            label = label + PASO
+            ahora = self._clock.now()
+            while siguiente - lead <= ahora:
+                if siguiente not in self._grabados:
+                    pendientes[siguiente] = _Estado(ahora)
+                siguiente = siguiente + PASO
+            if not pendientes:
+                self._esperar(siguiente - lead, stop)
+                continue
+            for label in sorted(pendientes, key=_clave):
+                if self._paso(label, pendientes[label]) is not None:
+                    del pendientes[label]
+            self._sleep(self._cfg.poll_seconds)
 
 
 def evaluate(
