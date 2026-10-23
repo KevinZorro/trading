@@ -275,18 +275,19 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | Hito | Origen | PR | Estado | Evidencia |
 |---|---|---|---|---|
 | L1: grabador en vivo de lotes GDELT, servicio aparte en la VM | Plan Etapa 4, pista L | #47 | mergeado | `src/data/gdelt.py`, `src/live/news.py`, `docs/despliegue-noticias.md`, `tests/live/test_news.py`, `tests/live/test_news_leakage.py` |
-| L1b: sondeo paralelo de lotes pendientes (un lote tardío no retiene a los siguientes) | Hallazgo de la VM, 2026-10-20 | #58 | en revisión | `src/live/news.py`, `tests/live/test_news.py` |
+| L1b: sondeo paralelo de lotes pendientes (un lote tardío no retiene a los siguientes) | Hallazgo de la VM, 2026-10-20 | #58 | mergeado | `src/live/news.py`, `tests/live/test_news.py` |
 | N1: esquema, validación y carga de noticias con la regla de alineación | Plan Etapa 4, pista N | #49 | mergeado | `src/data/news.py`, `tests/data/test_news.py` |
 | N2: descarga histórica de GDELT al formato del grabador, reanudable y con MD5 | Plan Etapa 4, pista N | #51 | mergeado (la descarga completa sigue en curso) | `src/data/gdelt_history.py`, `scripts/descargar_gdelt.py`, `docs/descarga-gdelt.md`, `tests/data/test_gdelt_history.py`, `tests/data/test_gdelt_history_leakage.py` |
 | P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | mergeado | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
-| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | calibración corrida: G1-G4 fallan 4b, no se fija presupuesto (la segunda ronda va en un ADR nuevo; #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
-| P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | mergeado y corrido: ni posición ni banderas de orden causan la rotación; retornos y técnicos sí, ningún grupo solo basta | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
+| P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | script mergeado (la corrida y la confirmación siguen en curso; #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR) | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
+| P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | mergeado; corrido (ningún grupo solo explica la rotación) | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
+| P3: segunda ronda de calibración, escalera de regularización declarada antes de correrla | ADR 0010 §4, diagnóstico de #57 | #60 | en revisión; escalera elegida (R1 a R3, sin penalización); sin correr | `docs/adr/0011-segunda-ronda-de-calibracion-regularizacion.md` |
 
 ### Etapas siguientes
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | en curso: mergeados L1 (#47), ADR 0010 (#48), N1 (#49), P2 (#50, #52, #53) y N2 (#51). Ver la tabla de la Etapa 4 |
+| 4. Pipeline de noticias con validación point-in-time | en curso: mergeados L1 (#47), ADR 0010 (#48), N1 (#49), P2 (#50, #52, #53), P2b (#57) y N2 (#51). Ver la tabla de la Etapa 4 |
 | 5. Agente B y comparación controlada contra A | sin empezar |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
