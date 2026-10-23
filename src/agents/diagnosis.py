@@ -161,15 +161,25 @@ def diagnose_policy(
     return salida
 
 
-def train_unit(unit: Unit, *, trainer: Trainer | None = None) -> dict[str, Any]:
-    """Entrena una politica sobre un camino de 4b y la diagnostica."""
+def train_unit(
+    unit: Unit,
+    *,
+    trainer: Trainer | None = None,
+    ppo: PPOConfig | None = None,
+    observation: ObservationSpec | None = None,
+) -> dict[str, Any]:
+    """Entrena una politica sobre un camino de 4b y la diagnostica.
+
+    ``ppo`` y ``observation`` los pasa la confirmacion del ADR 0011 para
+    re-diagnosticar con ``C*``; sin ellos es la configuracion de #57.
+    """
     fixture = level_4b_detectable_drift(DEFAULT_N_BARS, seed=unit.path_seed)
     train, validacion, _ = fixture.split()
-    spec = ObservationSpec()
+    spec = observation or ObservationSpec()
     escalador = scaler_for(train.series, spec)
     config_sim = _sim_config(fixture, 100_000.0, 0.0)
     env_config = EnvConfig(observation=spec, sizer=TargetWeightSizer(safety=0.98))
-    config = PPOConfig(total_timesteps=unit.timesteps)
+    config = ppo or PPOConfig(total_timesteps=unit.timesteps)
 
     def construir(f: Any) -> TradingEnv:
         return build_env(
