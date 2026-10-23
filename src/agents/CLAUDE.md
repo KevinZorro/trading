@@ -81,6 +81,11 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   `calibration.thresholds()`: el default de `ProtocolThresholds` sigue siendo 10 y lo fija
   un test. La unidad reanudable es un entrenamiento; `calibrate run` para en el primer
   punto que pasa y se niega a correr si el SHA256 del ADR no es el sellado.
+- **La segunda ronda (ADR 0011) es `calibrate ladder`** (`agents/regularization.py`):
+  peldaños R1 a R3 acumulativos, a 120 000 timesteps, sobre los mismos caminos y semillas
+  que G1 y con contraste pareado contra G1. Tiene su propio SHA256 de ADR y su propio
+  sello, así que sus entrenamientos no se mezclan con los del ADR 0010. La observación
+  del peldaño (`lookback`) va en cada registro, porque `ArmResult` no la serializa.
 - **Entrenar y juzgar son dos comandos** (`agents.cli arm` / `assemble`). Los
   criterios se aplican siempre sobre resultados guardados: revisar un umbral no
   exige reentrenar, y si alguien lo cambia después de ver los números, se ve en
