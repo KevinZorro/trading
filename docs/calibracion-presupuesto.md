@@ -108,3 +108,43 @@ uv run --group rl python -m agents.cli calibrate diagnose --workers $w
 ```
 
 Si se corta, relanza el mismo bloque. Pega la salida completa en el hilo.
+
+## Segunda ronda: escalera de regularización (ADR 0011)
+
+La escalera, los caminos y la regla de parada están en
+[`docs/adr/0011-segunda-ronda-de-calibracion-regularizacion.md`](adr/0011-segunda-ronda-de-calibracion-regularizacion.md).
+Corre R1, R2 y R3 en orden a 120 000 pasos (50 entrenamientos cada uno, ~1 h 10 min con
+3 procesos) y para en el primero que pasa 4b. Se niega a correr si el ADR 0011 en disco no
+es el sellado. Deja sus entrenamientos en `results/regularizacion/`, aparte de los de la
+primera ronda, y compara cada peldaño **pareado contra G1**: para eso lee los
+entrenamientos de G1 de `results/calibracion/units/`, que siguen en tu PC desde la primera
+ronda. Si no están, corre igual y lo dice al final.
+
+**1. Actualizar el repo (menos de 1 min).** En PowerShell de tu PC:
+
+```powershell
+cd RUTA_DE_TU_REPO   # la carpeta donde clonaste trading
+git fetch origin; git checkout main; git pull
+uv sync --frozen --group rl
+```
+
+**2. Lanzar la escalera (de 1 h 10 min a unas 3 h 30 min; se puede cortar y relanzar).**
+Deja el PC encendido y sin suspensión. Si se corta, vuelve a correr **este mismo bloque**:
+
+```powershell
+$w = Read-Host "Cuantos procesos en paralelo (los mismos de siempre)"
+$env:PYTHONPATH = "src"
+uv run --group rl python -m agents.cli calibrate ladder --workers $w
+```
+
+**3. Ver el resultado sin entrenar nada:**
+
+```powershell
+$env:PYTHONPATH = "src"
+uv run --group rl python -m agents.cli calibrate ladder-report
+```
+
+Pega en el hilo lo que imprime: una línea por peldaño con su veredicto, la diferencia
+contra G1 y su `t` entre caminos, y al final `C* = …` o "Ningún peldaño pasó". Si un
+peldaño pasa, la confirmación del protocolo completo necesita un PR aparte que la vuelva
+reanudable antes de correrla (ADR 0011 §7).

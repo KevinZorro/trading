@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -256,18 +257,24 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
 def cmd_calibrate(args: argparse.Namespace) -> int:
     """ADR 0010: calibra el presupuesto de entrenamiento sobre 4b."""
     from agents import calibration as cal
+    from agents import regularization as reg
 
-    por_defecto = (
-        "results/diagnostico" if args.action == "diagnose" else "results/calibracion"
-    )
+    por_defecto = {
+        "diagnose": "results/diagnostico",
+        "ladder": "results/regularizacion",
+        "ladder-report": "results/regularizacion",
+    }.get(args.action, "results/calibracion")
     out = Path(args.out or por_defecto)
     if args.action in ("worker", "diagnose"):
         from agents import diagnosis as dg
 
     if args.action == "worker":
         # Proceso hijo de ``run``: ya paso por la verificacion del sello.
+        entrenar: Callable[[cal.Unit], dict[str, Any]] | None
         if args.point == dg.DIAGNOSIS_POINT:
             todas, entrenar = dg.diagnosis_units(), dg.train_unit
+        elif reg.is_rung(args.point):
+            todas, entrenar = reg.rung_units(args.point), reg.train_unit
         else:
             todas, entrenar = cal.point_units(args.point), None
         unidades = cal.shard(todas, *(int(x) for x in args.shard.split("/")))
@@ -305,6 +312,22 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
             print(
                 f"  confirmacion con {nombre}: {horas:.0f} h, {args.workers} procesos"
             )
+        return 0
+    if args.action in ("ladder", "ladder-report"):
+        # ADR 0011: la escalera de regularizacion, sellada con su propio ADR.
+        reg_adr = reg.verify_adr(Path.cwd())
+        cal.acquire_seal(out, reg_adr, reg.config_digest())
+        base = Path(args.baseline)
+        correr = None
+        if args.action == "ladder":
+
+            def correr(nombre: str) -> None:
+                cal.run_point(out, nombre, args.workers, reg.rung_units(nombre))
+
+        escalera = reg.decide(out, base, run=correr)
+        ruta = reg.finalize(out, escalera)
+        print(reg.render(escalera))
+        print(f"\nescrito {ruta}")
         return 0
     adr = cal.verify_adr(Path.cwd())
     cal.acquire_seal(out, adr)
@@ -368,12 +391,28 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser(
         "calibrate", help="ADR 0010: presupuesto de entrenamiento sobre 4b"
     )
-    c.add_argument("action", choices=["bench", "run", "report", "worker", "diagnose"])
+    c.add_argument(
+        "action",
+        choices=[
+            "bench",
+            "run",
+            "report",
+            "worker",
+            "diagnose",
+            "ladder",
+            "ladder-report",
+        ],
+    )
     c.add_argument("--out", default=None)
     c.add_argument("--workers", type=int, default=4)
     c.add_argument("--timesteps", type=int, default=20_000, help="solo para bench")
     c.add_argument("--point", default=None, help="interno, de worker")
     c.add_argument("--shard", default="0/1", help="interno, de worker")
+    c.add_argument(
+        "--baseline",
+        default="results/calibracion",
+        help="carpeta con los entrenamientos de G1, para el contraste pareado",
+    )
     c.set_defaults(func=cmd_calibrate)
 
     args = parser.parse_args(argv)

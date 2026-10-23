@@ -40,6 +40,7 @@ from agents.protocol import (
     run_arm,
 )
 from data.fixtures import DEFAULT_N_BARS, level_4b_detectable_drift
+from envs.observation import ObservationSpec
 from eval.distribution import drift_t_statistic, summarize
 
 ADR_PATH = Path("docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md")
@@ -114,22 +115,24 @@ def config_digest() -> str:
     return hashlib.sha256(json.dumps(crudo, sort_keys=True).encode()).hexdigest()
 
 
-def verify_adr(root: Path, expected: str = ADR_SHA256) -> str:
+def verify_adr(
+    root: Path, expected: str = ADR_SHA256, adr_path: Path = ADR_PATH
+) -> str:
     # El sello es del texto con \n: en Windows git puede entregar \r\n (autocrlf)
     # y el mismo ADR tendria otro SHA256. Se normaliza antes de comparar.
-    crudo = (root / ADR_PATH).read_bytes().replace(b"\r\n", b"\n")
+    crudo = (root / adr_path).read_bytes().replace(b"\r\n", b"\n")
     real = hashlib.sha256(crudo).hexdigest()
     if real != expected:
         raise CalibrationError(
-            f"el ADR 0010 en disco tiene SHA256 {real} y el sellado es {expected}: "
+            f"{adr_path.name} en disco tiene SHA256 {real} y el sellado es {expected}: "
             "el criterio cambio despues de sellarse"
         )
     return real
 
 
-def acquire_seal(out: Path, adr_sha: str) -> None:
+def acquire_seal(out: Path, adr_sha: str, digest: str | None = None) -> None:
     """Crea el sello o confirma que es el mismo. Reanudar con otra config falla."""
-    payload = {"adr_sha256": adr_sha, "config_digest": config_digest()}
+    payload = {"adr_sha256": adr_sha, "config_digest": digest or config_digest()}
     ruta = out / "SEAL.json"
     out.mkdir(parents=True, exist_ok=True)
     try:
@@ -170,11 +173,18 @@ def train_unit(
     *,
     timesteps: int | None = None,
     policy_factory: PolicyFactory | None = None,
+    ppo: PPOConfig | None = None,
+    observation: ObservationSpec | None = None,
 ) -> dict[str, Any]:
-    """Entrena y evalua un (camino, semilla). ``timesteps`` solo lo usa ``bench``."""
+    """Entrena y evalua un (camino, semilla). ``timesteps`` solo lo usa ``bench``.
+
+    ``ppo`` y ``observation`` los pasa la segunda ronda (ADR 0011); sin ellos es
+    la configuracion de ``main``, la del ADR 0010.
+    """
     fixture = level_4b_detectable_drift(DEFAULT_N_BARS, seed=unit.path_seed)
     train, _, _ = fixture.split()
-    config = PPOConfig(total_timesteps=timesteps or unit.timesteps)
+    config = ppo or PPOConfig(total_timesteps=timesteps or unit.timesteps)
+    espacio = observation or ObservationSpec()
     # perf_counter mide duracion; no consulta la hora de pared (CLAUDE.md, Clock).
     inicio = time.perf_counter()
     brazo = run_arm(
@@ -183,6 +193,7 @@ def train_unit(
         seeds=[unit.agent_seed],
         ppo_config=config,
         policy_factory=policy_factory,
+        observation=espacio,
         allow_fewer_seeds=True,
     )
     return {
@@ -194,6 +205,8 @@ def train_unit(
         "drift_t": drift_t_statistic(np.asarray(train.signal)[1:]),
         "wall_seconds": time.perf_counter() - inicio,
         "machine": machine(),
+        # El brazo serializa PPOConfig pero no la observacion; el lookback va aca.
+        "observation": espacio.describe(),
         "arm": jsonable(brazo.describe()),
     }
 
@@ -272,9 +285,11 @@ def run_point(
         )
 
 
-def load_point(out: Path, point: str) -> list[dict[str, Any]]:
+def load_point(
+    out: Path, point: str, units: Sequence[Unit] | None = None
+) -> list[dict[str, Any]]:
     registros, faltan = [], []
-    for unit in point_units(point):
+    for unit in units if units is not None else point_units(point):
         ruta = unit_path(out, unit)
         if ruta.exists():
             registros.append(json.loads(ruta.read_text(encoding="utf-8")))
@@ -324,7 +339,7 @@ def summarize_point(point: str, registros: Sequence[dict[str, Any]]) -> dict[str
 
     return {
         "point": point,
-        "timesteps": dict(GRID)[point],
+        "timesteps": registros[0]["timesteps"],
         "verdict": nivel.verdict.value,
         "finding": nivel.finding,
         "decompositions": {
