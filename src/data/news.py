@@ -16,6 +16,10 @@ de publicacion original sino la de deteccion, que es posterior: sesgo conservado
 documentado como limitacion del principio 2. Medido el 2026-10-20 (L1), el archivo
 aparece hasta ~11 min *antes* de su rotulo, por eso la latencia por defecto es de
 30 min y no de 15.
+ASSUMPTION: la identidad de un articulo es ``(record_id, url)``, no ``record_id``
+solo. Medido sobre el historico 2016-08 a 2026-09: GDELT repite el ``record_id`` dentro
+de un mismo lote para articulos distintos (329 de 2,74 millones, todos con URL
+diferente). Dos filas con el mismo par si son un duplicado y se rechazan.
 ASSUMPTION: de los siete campos de ``V2Tone`` solo se conserva el tono neto (el
 primero). Los demas se pueden releer del registro crudo si una version futura los
 necesita; agregarlos despues de ver resultados sera una decision registrada.
@@ -99,9 +103,9 @@ class NewsDataset:
             raise DataValidationError(
                 f"rotulos duplicados o desordenados en {labels[malo + 1]}"
             )
-        ids = [e.record_id for b in self.batches for e in b.events]
-        if len(set(ids)) != len(ids):
-            raise DataValidationError("record_id repetido entre lotes")
+        claves = [(e.record_id, e.url) for b in self.batches for e in b.events]
+        if len(set(claves)) != len(claves):
+            raise DataValidationError("record_id y URL repetidos entre lotes")
         labels.flags.writeable = False
         object.__setattr__(self, "_labels", labels)
 

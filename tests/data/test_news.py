@@ -154,8 +154,26 @@ def test_rotulos_duplicados_o_desordenados_fallan() -> None:
 def test_record_id_repetido_entre_lotes_falla() -> None:
     b0 = parse_batch(registros()[1])
     con_mismos_ids = NewsBatch(**{**b0.__dict__, "label": L0130, "events": b0.events})
-    with pytest.raises(DataValidationError, match="no es del lote|record_id repetido"):
+    with pytest.raises(DataValidationError, match=r"no es del lote|repetidos"):
         NewsDataset((b0, con_mismos_ids))
+
+
+def test_mismo_record_id_con_url_distinta_en_un_lote_es_valido() -> None:
+    """GDELT lo hace: 329 casos reales en el historico, todos con URL distinta."""
+    b0 = parse_batch(registros()[1])
+    primero = b0.events[0]
+    gemelo = primero.__class__(
+        primero.record_id, primero.label, "otro.com", "https://otro.com/x", 0.0, None
+    )
+    ds = NewsDataset((NewsBatch(**{**b0.__dict__, "events": (*b0.events, gemelo)}),))
+    assert len(ds.batches[0].events) == len(b0.events) + 1
+
+
+def test_mismo_record_id_y_misma_url_en_un_lote_falla() -> None:
+    b0 = parse_batch(registros()[1])
+    repetido = (*b0.events, b0.events[0])
+    with pytest.raises(DataValidationError, match="repetidos"):
+        NewsDataset((NewsBatch(**{**b0.__dict__, "events": repetido}),))
 
 
 def test_tono_no_finito_falla() -> None:
