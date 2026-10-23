@@ -63,6 +63,10 @@ haber un `news-AAAA-MM-DD.jsonl` con la cabecera y al menos un lote `ok`.
   tras una caída larga recupera hasta 7 días de lotes (`NEWS_MAX_CATCHUP_BATCHES`).
   En una recuperación `received_at` es la hora de la descarga tardía, no la de
   disponibilidad: para medir latencia se usan solo los lotes con `last_404_at`.
+- Sondea en paralelo todos los rótulos pendientes: un lote que GDELT publica tarde (el
+  2026-10-20 el 20:15 y el 21:15 tardaron ~45 min) no retiene a los siguientes, y cada
+  uno conserva su propio `last_404_at`. Tras un reinicio retoma el hueco más viejo sin
+  grabar.
 - `docker compose ps` marca `unhealthy` si el heartbeat tiene más de 45 min.
 - Sin alertas de Telegram todavía (queda como mejora): hay que mirar `docker compose ps`.
 - Copia de los datos: `rsync -a azureuser@IP:/var/lib/news/ ./noticias-datos/`.
