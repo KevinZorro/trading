@@ -79,6 +79,12 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   la σ se sigue reportando junto a la comparación A contra B. Agente A, Agente B,
   placebo y re-corridas usan esta configuración; los Agentes A congelados de la sombra
   (60k, ADR 0009) no se tocan dentro de su ventana.
+- **La configuración del estudio se importa de `agents.study`** (`STUDY_PPO`,
+  `STUDY_OBSERVATION`), nunca se reescribe a mano. El Agente B la toma de ahí, igual que
+  A: si cada uno armara su `PPOConfig`, una diferencia de un hiperparámetro se mediría
+  como efecto de las noticias. `WalkForwardConfig` **no** la usa: es el experimento
+  sellado de C3 (ADR 0006), con 60k, y cambiar sus defaults rompe su sello. Re-correr el
+  walk-forward con R3 es un segundo toque del test real y se decide en un ADR.
 - **El presupuesto de entrenamiento se calibra sobre el fixture 4b, nunca sobre datos
   reales.** Se aumentan los timesteps hasta que 4b pase su criterio pre-registrado, sin
   tocar ese criterio, y ese presupuesto queda fijo para todo el estudio. Así no se
