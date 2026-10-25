@@ -285,7 +285,7 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | P3b: script de la escalera R1 a R3 (`calibrate ladder`), pareado contra G1 | ADR 0011 | #61 | mergeado; corrido: R1 y R2 fallan, **R3 pasa 4b** (`C*` = R3) | `src/agents/regularization.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_regularization.py` |
 | P3c: confirmación de `C*` = R3 con el protocolo completo, reanudable, y re-diagnóstico | ADR 0011 §5 y §6 | #62 | mergeado; **corrido: protocolo completo en verde con R3** (4b y el par PASS por primera vez). `C*` = R3 a 120 000 timesteps queda fijo para el estudio | `src/agents/confirmation.py`, `results/regularizacion/summary.json`, `docs/calibracion-presupuesto.md`, `tests/agents/test_confirmation.py` |
 | P3d: registro del resultado de la confirmación (resumen, deuda de la Etapa 5 saldada) | ADR 0011 §5 regla 3 | #63 | mergeado | `results/confirmacion/summary.json`, `docs/calibracion-presupuesto.md`, `src/agents/CLAUDE.md`, `CLAUDE.md` |
-| P3e: configuración del estudio en un solo lugar (`STUDY_PPO`, `STUDY_OBSERVATION`) | ADR 0011 §2 | (este PR) | en revisión; el walk-forward sellado de C3 no se toca | `src/agents/study.py`, `tests/agents/test_study.py` |
+| P3e: configuración del estudio en un solo lugar (`STUDY_PPO`, `STUDY_OBSERVATION`) | ADR 0011 §2 | #64 | en revisión; el walk-forward sellado de C3 no se toca | `src/agents/study.py`, `tests/agents/test_study.py` |
 
 ### Etapas siguientes
 
