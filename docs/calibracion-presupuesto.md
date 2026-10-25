@@ -197,3 +197,49 @@ uv run --group rl python -m agents.cli calibrate confirm-report
 
 Pega en el hilo lo que imprime: el reporte del protocolo nivel por nivel y la línea del
 re-diagnóstico. Si faltan entrenamientos, dice cuántos.
+
+## Resultado de la confirmación (2026-10-25)
+
+**El protocolo completo pasa con R3, y es la primera vez.** Por la regla 3 del ADR 0011
+§5, R3 a 120 000 timesteps queda fijo para todo el estudio. Resumen en
+`results/confirmacion/summary.json`, con el SHA256 del `protocol.json` completo.
+
+| Nivel | Etapa 3 (60k, config. de `main`) | Confirmación (R3) |
+|---|---|---|
+| 0 | PASS, capture 1,00 | PASS, capture 1,00 |
+| 1 | PASS; capture con β = −0,1: 0,30 | PASS; capture con β = −0,1: 0,77 |
+| 2 | PASS, la rotación cae 19,3 % | PASS, la rotación cae 17,0 % (piso 10 %) |
+| 3 | MEASURED, memoriza 10/10; MLP = LSTM | MEASURED, memoriza 10/10; LSTM − MLP = +0,045 de capture (`t` = 3,7) |
+| 4a | PASS, `t` = +0,69 | PASS, `t` = +0,29 |
+| 4b | FAIL: invertido 0,63, dispersión 0,383 | PASS: invertido 0,93, dispersión 0,141 |
+| Par | PARTIAL | PASS: +0,69 de tiempo invertido, `t` = 18,9 |
+
+Para leerlo:
+
+- 4b pasa con poco margen (0,141 contra 0,15). Los caminos 761 (0,36) y 701 (0,19) rotan
+  por encima del umbral. El criterio es la media entre caminos, y la media pasa.
+- La σ de la política queda en ~1,0 en todos los niveles: la exploración no se apaga a
+  120 000 pasos con lr 1e-4. El par descarta que el agente compre por defecto (en 4a se
+  invierte 0,24, en 4b 0,93, con los mismos shocks). Aun así, la σ va al lado de la
+  comparación A contra B.
+- En el nivel 3 la ventaja del LSTM es un hallazgo nuevo, y no bloquea nada.
+
+### Re-diagnóstico con R3 (ADR 0011 §6)
+
+Mismo diagnóstico que #57, sobre 10 políticas R3. Mediana de la dispersión de la acción
+en lazo cerrado, fijando un grupo de la observación por vez:
+
+| Grupo fijado | Dispersión (mediana) |
+|---|---|
+| Ninguno (línea base) | 0,109 |
+| Retornos | 0,101 |
+| Técnicos | 0,022 |
+| Posición | 0,111 |
+| Resultado de la orden | 0,109 |
+
+El script lee "los cuatro grupos sostienen la rotación", pero esa lectura es trivial: la
+línea base ya está por debajo del umbral de 0,15, así que cualquier grupo "alcanza". Lo
+que informa es la caída. Con R3, lo que queda moviendo la acción son los técnicos: al
+fijarlos la dispersión cae un 80 %. En #57, con la configuración de `main`, eran sobre
+todo los retornos (0,345 → 0,19). `lookback` 1 les quitó ese papel. Con el Agente B
+conviene repetir este diagnóstico con las noticias como grupo propio.
