@@ -269,7 +269,7 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 
 El plan de la etapa vive fuera del repositorio, en los archivos del proyecto
 (`etapa4-noticias/PLAN.md`): fuente GDELT GKG 2.0 crudo, tema `ECON_BITCOIN`, tono de
-GDELT + FinBERT, `pub_time` = rótulo del lote + 30 min. La pista L es el grabador en
+GDELT + FinBERT, `pub_time` = rótulo del lote + 60 min (ADR 0012, K2). La pista L es el grabador en
 vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 
 | Hito | Origen | PR | Estado | Evidencia |
@@ -278,7 +278,8 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | L1b: sondeo paralelo de lotes pendientes (un lote tardío no retiene a los siguientes) | Hallazgo de la VM, 2026-10-20 | #58 | mergeado | `src/live/news.py`, `tests/live/test_news.py` |
 | N1: esquema, validación y carga de noticias con la regla de alineación | Plan Etapa 4, pista N | #49 | mergeado | `src/data/news.py`, `tests/data/test_news.py` |
 | N2: descarga histórica de GDELT al formato del grabador, reanudable y con MD5 | Plan Etapa 4, pista N | #51, #55, #56 | mergeado; descarga completa del 2016-08-01 al 2026-09-28 en los archivos del proyecto (versionada como agregados en N3) | `src/data/gdelt_history.py`, `scripts/descargar_gdelt.py`, `docs/descarga-gdelt.md`, `tests/data/test_gdelt_history.py`, `tests/data/test_gdelt_history_leakage.py` |
-| N3: dataset de noticias versionado (un lote de 15 min por fila, con manifest y VALIDACION.md) | Plan Etapa 4, pista N | #66 | listo para revisión; 356 160 lotes, SHA256 de cada archivo crudo verificado al agregar; nivel artículo (títulos para N2b) sin versionar | `datasets/gdelt/`, `src/data/news_aggregate.py`, `scripts/agregar_gdelt.py`, `scripts/validar_gdelt.py`, `tests/data/test_news_aggregate.py`, `tests/data/test_news_aggregate_leakage.py` |
+| N3: dataset de noticias versionado (un lote de 15 min por fila, con manifest y VALIDACION.md) | Plan Etapa 4, pista N | #66 | mergeado; 356 160 lotes, SHA256 de cada archivo crudo verificado al agregar; nivel artículo (títulos para N2b) sin versionar | `datasets/gdelt/`, `src/data/news_aggregate.py`, `scripts/agregar_gdelt.py`, `scripts/validar_gdelt.py`, `tests/data/test_news_aggregate.py`, `tests/data/test_news_aggregate_leakage.py` |
+| N4: features de noticias por barra diaria (7 columnas del ADR 0012, latencia 60 min, brazo placebo a 364 días) | Plan Etapa 4, pista N; ADR 0012 §2.3 y §3 | PR_N4 | en revisión; `finbert_mean` queda enmascarada hasta N2b; con 60 min el 8,3 % de las barras tiene `coverage_ok` = 0 | `src/features/news.py`, `tests/features/test_news.py`, `tests/features/test_news_leakage.py` |
 | P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | mergeado | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
 | P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | mergeado; corrido: G1 a G4 fallan 4b, lo que llevó a la segunda ronda (P3). #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
 | P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | mergeado; corrido (ningún grupo solo explica la rotación) | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
