@@ -1,0 +1,21 @@
+{
+  "file": "gdelt-batches.csv.gz",
+  "sha256": "25af73a176e455142083f7788323c4c73ddfdc4e59ce50f9495731c74006205a",
+  "rows": 356160,
+  "first_timestamp": "2016-08-01T00:00:00+00:00",
+  "last_timestamp": "2026-09-27T23:45:00+00:00",
+  "symbol": "ECON_BITCOIN",
+  "interval": "15m",
+  "source": "https://data.gdeltproject.org/gdeltv2/masterfilelist.txt",
+  "downloaded_at": "2026-10-22",
+  "script": "scripts/agregar_gdelt.py",
+  "notes": [
+    "un lote de 15 min por fila, rotulado por el nombre del archivo GKG (label); usable solo desde label + latencia (ADR 0012, 2.2)",
+    "crudo: 3710 archivos, MANIFEST.json SHA256 eb5f28df549fde2021740a0eae5272fe17f42e161579363a28ec685700936c26; cada archivo se verifico contra el al agregar",
+    "sin deduplicar: rows_theme y tone_sum cuentan filas (ADR 0012, 2.4)",
+    "tone_sum = suma de V2Tone[0] de las filas del tema; n_titled = filas del tema con PAGE_TITLE",
+    "last_modified_offset_s = Last-Modified menos label; negativo = publicado antes del rotulo",
+    "los lotes missing se conservan como fila, sin conteos",
+    "el nivel articulo (titulos) no se versiona aqui: lo necesita N2b"
+  ]
+}
