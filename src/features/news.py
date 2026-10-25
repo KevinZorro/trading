@@ -25,7 +25,10 @@ ASSUMPTION: ``tone_mean``, ``no_title`` y ``finbert_mean`` usan las filas de tod
 lotes ``ok`` de la barra (el ADR dice "las filas del tema en la barra"); solo
 ``news_share`` se restringe a lotes sanos (ADR 0012, 3, fila 1). ``coverage_ok``
 informa cuando la barra es confiable.
-ASSUMPTION: ``finbert_mean`` queda ``NaN`` hasta que N2b aporte los puntajes.
+ASSUMPTION: ``finbert_mean`` es ``sum(score) / sum(n)`` sobre los lotes ``ok`` de la
+barra, con los puntajes de ``features.finbert_dataset.attach_finbert`` (``finbert_n``,
+``finbert_sum``). Sin esas columnas, o sin articulos puntuados en la barra, vale
+``NaN``.
 """
 
 from __future__ import annotations
@@ -131,10 +134,17 @@ def build_news_features(
     tone = np.full(n, np.nan)
     tone[theme_ok > 0] = tono_ok[theme_ok > 0] / theme_ok[theme_ok > 0]
 
+    finbert = np.full(n, np.nan)
+    if "finbert_n" in frame.columns:
+        fin_n = suma(frame["finbert_n"].fillna(0).to_numpy(np.float64), ok)
+        fin_suma = suma(frame["finbert_sum"].fillna(0).to_numpy(np.float64), ok)
+        finbert[fin_n > 0] = fin_suma[fin_n > 0] / fin_n[fin_n > 0]
+
     vals[:, _COL["news_share"]] = share
     vals[:, _COL["news_share_z30"]] = _zscore(share)
     vals[:, _COL["tone_mean"]] = tone
     vals[:, _COL["tone_delta7"]] = _delta(tone)
+    vals[:, _COL["finbert_mean"]] = finbert
     vals[:, _COL["no_title"]] = (titulos_ok == 0).astype(np.float64)
     vals[:, _COL["coverage_ok"]] = (sanos >= COVERAGE_MIN_BATCHES).astype(np.float64)
     return NewsFeatureTable(closes, vals, latency)

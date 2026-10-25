@@ -25,6 +25,11 @@ rl = [
 ws = [
     "websockets==15.0.1",
 ]
+# FinBERT (ADR 0012, 3.1): solo lo importa features.finbert, de forma perezosa. torch
+# viene del grupo `rl`; transformers 5 exige torch >= 2.6.
+nlp = [
+    "transformers==5.20.2",
+]
 dev = [
     "pytest==8.3.4",
     "pytest-cov==6.0.0",
@@ -54,6 +59,8 @@ markers = [
     "rl: necesita stable-baselines3 y torch (uv sync --group rl)",
     # Toca red real (Binance). Se saltea salvo RUN_NETWORK_TESTS=1, que el CI no
     # define: el guard de tests/conftest.py sigue activo para todo lo demas.
+    # Carga ProsusAI/finbert (grupo `nlp`, ~440 MB). Se saltea sin FINBERT_DIR.
+    "nlp: necesita transformers, torch y los pesos de FinBERT (FINBERT_DIR)",
     "network: toca red real; solo con RUN_NETWORK_TESTS=1, nunca en CI",
 ]
 
@@ -123,9 +130,9 @@ warn_unreachable = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-# Los grupos `rl` y `ws` son opcionales y el CI no lo instala en el job de tipos: sin este
+# Los grupos `rl`, `nlp` y `ws` son opcionales y el CI no lo instala en el job de tipos: sin este
 # override, mypy fallaria por no encontrar el modulo en vez de por un error real.
-module = ["stable_baselines3.*", "sb3_contrib.*", "websockets.*"]
+module = ["stable_baselines3.*", "sb3_contrib.*", "websockets.*", "torch.*", "transformers.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

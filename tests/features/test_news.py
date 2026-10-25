@@ -37,8 +37,23 @@ def test_tone_mean_y_no_title_a_mano() -> None:
     assert f0[COL["no_title"]] == 1.0
 
 
-def test_finbert_queda_enmascarada_hasta_n2b() -> None:
+def test_finbert_queda_enmascarada_sin_puntajes() -> None:
     assert np.isnan(fila(grilla(3), "2020-01-02")[COL["finbert_mean"]])
+
+
+def test_finbert_mean_a_mano() -> None:
+    # Barra del 01-03: 96 lotes de 2 titulos puntuados, suma 0.5 por lote.
+    # Un lote de 3 titulos con suma -1.5 baja la media: (95 * 0.5 - 1.5) / (95 * 2 + 3).
+    frame = grilla(3, finbert_n=2, finbert_sum=0.5)
+    i = frame.index[frame["label"] == "2020-01-02 12:00"][0]
+    frame.loc[i, ["finbert_n", "finbert_sum"]] = [3, -1.5]
+    f = fila(frame, "2020-01-03")
+    assert f[COL["finbert_mean"]] == pytest.approx((95 * 0.5 - 1.5) / (95 * 2 + 3))
+
+
+def test_finbert_mean_enmascarada_si_la_barra_no_tiene_titulos_puntuados() -> None:
+    frame = grilla(3, finbert_n=0, finbert_sum=0.0)
+    assert np.isnan(fila(frame, "2020-01-03")[COL["finbert_mean"]])
 
 
 def test_coverage_ok_exige_87_de_96_lotes_sanos() -> None:
