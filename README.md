@@ -286,7 +286,7 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | P3c: confirmación de `C*` = R3 con el protocolo completo, reanudable, y re-diagnóstico | ADR 0011 §5 y §6 | #62 | mergeado; **corrido: protocolo completo en verde con R3** (4b y el par PASS por primera vez). `C*` = R3 a 120 000 timesteps queda fijo para el estudio | `src/agents/confirmation.py`, `results/regularizacion/summary.json`, `docs/calibracion-presupuesto.md`, `tests/agents/test_confirmation.py` |
 | P3d: registro del resultado de la confirmación (resumen, deuda de la Etapa 5 saldada) | ADR 0011 §5 regla 3 | #63 | mergeado | `results/confirmacion/summary.json`, `docs/calibracion-presupuesto.md`, `src/agents/CLAUDE.md`, `CLAUDE.md` |
 | P3e: configuración del estudio en un solo lugar (`STUDY_PPO`, `STUDY_OBSERVATION`) | ADR 0011 §2 | #64 | mergeado; el walk-forward sellado de C3 no se toca | `src/agents/study.py`, `tests/agents/test_study.py` |
-| N7: pre-registro del Agente B (features, latencia, placebo, puerta sobre fixtures, criterio, re-corrida de A) | Plan Etapa 4, pista N | #65 | en revisión; decisiones K1 a K3 de Kevin abiertas | `docs/adr/0012-pre-registro-del-agente-b.md` |
+| N7: pre-registro del Agente B (features, latencia, placebo, puerta sobre fixtures, criterio, re-corrida de A) | Plan Etapa 4, pista N | #65 | en revisión; K1 a K3 elegidas por Kevin (A en la misma corrida, latencia 60 min, DSR también contra el placebo) | `docs/adr/0012-pre-registro-del-agente-b.md` |
 
 ### Etapas siguientes
 

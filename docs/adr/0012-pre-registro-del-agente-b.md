@@ -1,8 +1,9 @@
 # ADR 0012 — Pre-registro del Agente B: noticias de GDELT sobre el walk-forward diario
 
-- **Estado:** propuesto. Quedan tres decisiones de Kevin, marcadas **K1**, **K2** y
-  **K3** (secciones 7, 2.2 y 6). Mientras estén abiertas, el texto describe la opción
-  recomendada. Se sella al mergearse: el runner de la corrida (PR N8) guarda el SHA256
+- **Estado:** propuesto. Kevin eligió el 2026-10-25 las tres opciones recomendadas:
+  **K1** (sección 7), A, B y placebo en la misma corrida, con el veredicto de A como
+  secundario; **K2** (sección 2.2), latencia de 60 minutos; **K3** (sección 6), DSR
+  también contra el placebo. Se sella al mergearse: el runner de la corrida (PR N8) guarda el SHA256
   de este archivo y no corre si el del disco es otro, igual que el del ADR 0006.
 - **Fecha:** 2026-10-25
 - **Contexto de etapa:** Etapa 5. Es el PR N7 del plan de la Etapa 4
@@ -101,12 +102,14 @@ decide a qué día van los lotes de la última hora o dos: con 30 minutos, el ú
 lote del día es el de las 23:30; con 60, el de las 23:00. Es el 1 % al 2 % de los
 lotes del día, así que la decisión cambia poco la información y mucho la garantía.
 
-**Recomendada: 60 minutos.** Cubre lo observado en vivo con margen, mueve dos lotes
+**Elegida por Kevin (K2, 2026-10-25): 60 minutos.** Cubre lo observado en vivo con margen, mueve dos lotes
 por día al día siguiente, y la regla se mantiene: si L1 mide más antes del sello de
 N8, se sube al siguiente múltiplo de 15 minutos **antes** de correr, nunca después.
 La alternativa es quedarse en 30 (el valor de N1 y del plan) y declarar los lotes
 tardíos como fuga conocida y acotada. Antes del sello, N8 recalcula el p99 del
 retraso en vivo con los lotes que tienen `last_404_at` y lo escribe en el sello.
+`data.news.DEFAULT_LATENCY` sigue en 30 minutos en `main`: N4 la sube a 60 o la pasa
+explícita, y el sello de N8 registra la que se usó.
 
 En vivo la latencia es la real: la sombra decide a las 00:00:30 y usa solo lo
 recibido hasta entonces. La latencia del histórico existe para que el backtest no use
@@ -326,8 +329,8 @@ de tres etiquetas, que no cambian el veredicto:
 - **B peor:** `D_A` con mediana negativa en las dos series.
 - **plano:** cualquier otro caso.
 
-**K3 es la condición 6.** El borrador del plan pedía el DSR solo contra A. Lo recomendado
-es pedirlo también contra el placebo: la pregunta del estudio es si el *contenido* de
+**K3 es la condición 6, elegida por Kevin el 2026-10-25.** El borrador del plan pedía
+el DSR solo contra A. Lo elegido es pedirlo también contra el placebo: la pregunta del estudio es si el *contenido* de
 las noticias aporta, y el contraste que lo aísla es contra el placebo. La alternativa
 (solo las condiciones 1 a 5) es más fácil de pasar, y un APORTA podría venir de una
 diferencia contra el placebo que no se separa del ruido.
@@ -345,14 +348,14 @@ días de test es un **segundo toque del test para el Agente A**: ya se sabe que 
 sin mirar datos reales, así que no es una configuración elegida contra el test; pero
 sí es la segunda que se evalúa sobre él.
 
-**Recomendada: A, B y placebo en la misma corrida sellada**, mismo commit, mismo sello,
+**Elegida por Kevin (K1, 2026-10-25): A, B y placebo en la misma corrida sellada**, mismo commit, mismo sello,
 y el veredicto de A contra buy-and-hold (las tres condiciones del ADR 0006 §2) se
 reporta como **secundario**, rotulado "segundo toque del test para el Agente A". Su DSR
 decide con `n_trials` = 10, como en C3, y se muestra con `n_trials` = 2 (C3 y R3), que
 es el número honesto. C3 queda sellado como registro y su `WalkForwardConfig` no se
 toca (`agents/CLAUDE.md`): N8 arma su configuración desde `agents.study`.
 
-Alternativas consideradas:
+Alternativas consideradas y no elegidas:
 
 - **Misma corrida, pero A con un veredicto propio y `n_trials` = 1**, como si R3 fuera
   una primera configuración. Da un titular más limpio sobre A, pero ignora que esos
