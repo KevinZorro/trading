@@ -69,6 +69,16 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   entrenamiento, no noticias: el σ de la política se reporta junto a la comparación.
   **No se aplica retroactivamente a 4b**; cuando cambie, se re-corre el protocolo
   completo.
+- **Deuda saldada el 2026-10-25: la configuración del estudio es R3 a 120 000
+  timesteps** (ADR 0011): `lookback` 1, `learning_rate` 1e-4, `n_epochs` 5, red 32×32,
+  `gamma` 0,9. El presupuesto solo no era la palanca (ADR 0010: G1 a G4 fallan con
+  σ = 0,05); la regularización sí. El protocolo completo con R3 está en verde sobre los
+  caminos registrados (`results/confirmacion/summary.json`): 4b pasa con dispersión
+  0,141 contra 0,15, poco margen, y el par con `t` = 18,9. **La σ de la política queda
+  en ~1,0**: la evaluación es determinista y el par descarta "compra por defecto", pero
+  la σ se sigue reportando junto a la comparación A contra B. Agente A, Agente B,
+  placebo y re-corridas usan esta configuración; los Agentes A congelados de la sombra
+  (60k, ADR 0009) no se tocan dentro de su ventana.
 - **El presupuesto de entrenamiento se calibra sobre el fixture 4b, nunca sobre datos
   reales.** Se aumentan los timesteps hasta que 4b pase su criterio pre-registrado, sin
   tocar ese criterio, y ese presupuesto queda fijo para todo el estudio. Así no se

@@ -1,0 +1,261 @@
+{
+  "_nota": "Resumen de results/confirmacion/protocolo/protocol.json del PC de Kevin (confirmacion terminada 2026-10-25 03:38Z). Se versiona el resumen; el protocol.json completo (1,5 MB), los 490 entrenamientos de units/ y su MANIFEST.json van al Release. protocol_json_sha256 es el SHA256 del archivo completo tal como Kevin lo subio al hilo.",
+  "protocol_json_sha256": "7d6363da05e3959f664c8256fbe055281a53a2ecd5b188a9bd55876b4a12bd66",
+  "created_at": "2026-10-25T03:38:42.130751000",
+  "provenance": {
+    "adr": "docs\\adr\\0011-segunda-ronda-de-calibracion-regularizacion.md",
+    "adr_sha256": "2fa1fd425b2c68cf89c47203a3ac98ed39b0a9e1396b937dd685921843c942d9",
+    "rung": "R3"
+  },
+  "config": {
+    "seeds": [
+      11,
+      23,
+      37,
+      41,
+      59,
+      67,
+      73,
+      89,
+      97,
+      101
+    ],
+    "fixture_seed": 20240115,
+    "bars": 8000,
+    "snr_sweep": [
+      -0.1,
+      -0.2,
+      -0.3,
+      -0.5
+    ],
+    "path_seeds": [
+      701,
+      709,
+      719,
+      727,
+      733,
+      739,
+      743,
+      751,
+      757,
+      761
+    ],
+    "thresholds": {
+      "level_0_min_capture": 0.8,
+      "level_1_monotonia_tol": 0.1,
+      "level_1_min_capture_highest_snr": 0.5,
+      "level_2_min_turnover_drop": 0.1,
+      "level_4_min_paths": 10,
+      "level_4b_min_drift_t": 3.0,
+      "level_4b_min_time_invested": 0.8,
+      "level_4b_max_action_std": 0.15,
+      "level_4_pair_min_time_invested_gap": 0.0
+    }
+  },
+  "thresholds": {
+    "level_0_min_capture": 0.8,
+    "level_1_monotonia_tol": 0.1,
+    "level_1_min_capture_highest_snr": 0.5,
+    "level_2_min_turnover_drop": 0.1,
+    "level_4_min_paths": 10,
+    "level_4b_min_drift_t": 3.0,
+    "level_4b_min_time_invested": 0.8,
+    "level_4b_max_action_std": 0.15,
+    "level_4_pair_min_time_invested_gap": 0.0
+  },
+  "stopped_at": null,
+  "levels": [
+    {
+      "level": 0,
+      "label": "senal determinista",
+      "verdict": "PASS",
+      "finding": "mediana de capture 1.000 (p25 1.000, p75 1.000); saturacion mediana 1.00",
+      "policy_sigma_median": 0.8732
+    },
+    {
+      "level": 1,
+      "label": "senal con ruido (barrido de SNR)",
+      "verdict": "PASS",
+      "finding": "capture mediano por SNR decreciente: level_1_beta-0.5=0.951, level_1_beta-0.3=0.908, level_1_beta-0.2=0.786, level_1_beta-0.1=0.772",
+      "policy_sigma_median": 0.9523
+    },
+    {
+      "level": 2,
+      "label": "senal con costos",
+      "verdict": "PASS",
+      "finding": "rotacion anualizada mediana 108.19 con costos contra 130.35 sin costos: caida del 17.0%. Capture mediano 0.8242444410332911",
+      "policy_sigma_median": 0.9419
+    },
+    {
+      "level": 3,
+      "label": "cambio de regimen (N caminos)",
+      "verdict": "MEASURED",
+      "finding": "level_3_lstm: capture medio entre caminos -1.304 (sigma_mercado 0.526, sigma_entrenamiento 0.087), memorizador de referencia -1.436; MEMORIZA en 10/10 caminos; level_3_mlp: capture medio entre caminos -1.350 (sigma_mercado 0.538, sigma_entrenamiento 0.038), memorizador de referencia -1.436; MEMORIZA en 10/10 caminos; comparacion pareada entre brazos -> capture: level_3_mlp -1.3495 contra level_3_lstm -1.3041  ->  diferencia pareada -0.0455 (sigma 0.0388, N=10 pares)  t=-3.70 contra 2.262  DISTINGUIBLE de cero",
+      "policy_sigma_median": 0.9609
+    },
+    {
+      "level": 4,
+      "label": "4a control negativo puro (Heston)",
+      "verdict": "PASS",
+      "finding": "exceso excess_log_growth_vs_always_long: media entre caminos +0.0539  sigma_mercado 0.5861  sigma_entrenamiento 0.1135 (x5.2)  t=+0.29 contra 2.262  NO distinguible de cero  (N=10 caminos x M=10 semillas). Evidencia que NO entra en el veredicto: tiempo invertido medio 0.24, t del drift en entrenamiento mediana +0.84 (NO detectable al 95%), asi que abstenerse es defendible en este fixture",
+      "policy_sigma_median": 1.0016,
+      "per_path_medians": {
+        "path701": {
+          "time_invested": 0.3284,
+          "action_std": 0.2114,
+          "turnover_annualized": 22.1209,
+          "excess_log_growth_vs_always_long": 0.8028
+        },
+        "path709": {
+          "time_invested": 0.2399,
+          "action_std": 0.2025,
+          "turnover_annualized": 24.7524,
+          "excess_log_growth_vs_always_long": -0.46
+        },
+        "path719": {
+          "time_invested": 0.1139,
+          "action_std": 0.0997,
+          "turnover_annualized": 10.0056,
+          "excess_log_growth_vs_always_long": -0.4394
+        },
+        "path727": {
+          "time_invested": 0.1316,
+          "action_std": 0.1086,
+          "turnover_annualized": 14.8492,
+          "excess_log_growth_vs_always_long": -0.9255
+        },
+        "path733": {
+          "time_invested": 0.316,
+          "action_std": 0.2701,
+          "turnover_annualized": 22.4619,
+          "excess_log_growth_vs_always_long": 0.5656
+        },
+        "path739": {
+          "time_invested": 0.5223,
+          "action_std": 0.3192,
+          "turnover_annualized": 19.7124,
+          "excess_log_growth_vs_always_long": -0.0474
+        },
+        "path743": {
+          "time_invested": 0.0648,
+          "action_std": 0.0868,
+          "turnover_annualized": 8.503,
+          "excess_log_growth_vs_always_long": 0.0486
+        },
+        "path751": {
+          "time_invested": 0.2664,
+          "action_std": 0.2931,
+          "turnover_annualized": 23.7191,
+          "excess_log_growth_vs_always_long": -0.2567
+        },
+        "path757": {
+          "time_invested": 0.2309,
+          "action_std": 0.1864,
+          "turnover_annualized": 24.6921,
+          "excess_log_growth_vs_always_long": 0.4809
+        },
+        "path761": {
+          "time_invested": 0.1567,
+          "action_std": 0.1624,
+          "turnover_annualized": 12.2556,
+          "excess_log_growth_vs_always_long": 0.7706
+        }
+      }
+    },
+    {
+      "level": 4,
+      "label": "4b drift detectable (Heston)",
+      "verdict": "PASS",
+      "finding": "t del drift mediana +5.77 (detectable). Tiempo invertido medio entre caminos 0.93 (sigma_mercado 0.080); dispersion de la accion media 0.141 (sigma_mercado 0.090); rotacion anualizada media 9.1",
+      "policy_sigma_median": 0.9982,
+      "per_path_medians": {
+        "path701": {
+          "time_invested": 0.9389,
+          "action_std": 0.1914,
+          "turnover_annualized": 6.2186,
+          "excess_log_growth_vs_always_long": 0.2727
+        },
+        "path709": {
+          "time_invested": 0.9728,
+          "action_std": 0.0993,
+          "turnover_annualized": 7.8889,
+          "excess_log_growth_vs_always_long": -0.0594
+        },
+        "path719": {
+          "time_invested": 0.9608,
+          "action_std": 0.0699,
+          "turnover_annualized": 7.772,
+          "excess_log_growth_vs_always_long": -0.1131
+        },
+        "path727": {
+          "time_invested": 0.9446,
+          "action_std": 0.1306,
+          "turnover_annualized": 9.7876,
+          "excess_log_growth_vs_always_long": -0.2318
+        },
+        "path733": {
+          "time_invested": 0.9842,
+          "action_std": 0.0699,
+          "turnover_annualized": 4.1496,
+          "excess_log_growth_vs_always_long": -0.0478
+        },
+        "path739": {
+          "time_invested": 0.9576,
+          "action_std": 0.1722,
+          "turnover_annualized": 2.7807,
+          "excess_log_growth_vs_always_long": 0.1041
+        },
+        "path743": {
+          "time_invested": 0.7656,
+          "action_std": 0.1799,
+          "turnover_annualized": 29.7158,
+          "excess_log_growth_vs_always_long": -0.6843
+        },
+        "path751": {
+          "time_invested": 0.9851,
+          "action_std": 0.0575,
+          "turnover_annualized": 3.8528,
+          "excess_log_growth_vs_always_long": 0.0112
+        },
+        "path757": {
+          "time_invested": 0.9763,
+          "action_std": 0.087,
+          "turnover_annualized": 7.0488,
+          "excess_log_growth_vs_always_long": -0.1242
+        },
+        "path761": {
+          "time_invested": 0.7956,
+          "action_std": 0.3561,
+          "turnover_annualized": 12.0385,
+          "excess_log_growth_vs_always_long": -0.0246
+        }
+      }
+    },
+    {
+      "level": 4,
+      "label": "4a<->4b el par",
+      "verdict": "PASS",
+      "finding": "metrica principal -> time_invested: 4b (drift detectable) +0.9281 contra 4a (sin drift detectable) +0.2371  ->  diferencia pareada +0.6911 (sigma 0.1154, N=10 pares)  t=+18.94 contra 2.262  DISTINGUIBLE de cero. Exceso sobre estar invertido: excess_log_growth_vs_always_long: 4b -0.0897 contra 4a +0.0539  ->  diferencia pareada -0.1437 (sigma 0.5607, N=10 pares)  t=-0.81 contra 2.262  NO distinguible de cero. t del drift: 4a mediana +0.84, 4b mediana +5.77. El agente SE INVIERTE MAS cuando el drift es detectable y alcanza los umbrales absolutos del 4b: reconoce el drift y lo explota.",
+      "per_path_medians": {}
+    }
+  ],
+  "rediagnosis": {
+    "_nota": "rediagnosis.json del PC de Kevin (pegado en el hilo 2026-10-25 03:44Z). 10 politicas R3, dispersion de accion con cada grupo fijado (mediana, lazo cerrado).",
+    "n_policies": 10,
+    "threshold": 0.15,
+    "baseline_action_std_median": 0.10931774319115518,
+    "closed_loop_action_std_median": {
+      "retornos": 0.10132130515901203,
+      "tecnicos": 0.0224660082360573,
+      "posicion": 0.11129847115930658,
+      "resultado_orden": 0.10921837420185998
+    },
+    "sufficient_groups_reported": [
+      "retornos",
+      "tecnicos",
+      "posicion",
+      "resultado_orden"
+    ],
+    "lectura": "La linea base ya esta por debajo de 0.15, asi que 'todos los grupos son suficientes' es trivial y no informa. Lo informativo es la caida: fijar los tecnicos baja la dispersion de 0.109 a 0.022; retornos, posicion y resultado de orden casi no la mueven. Con R3 la variacion residual de la accion la mueven los tecnicos."
+  }
+}

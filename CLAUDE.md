@@ -226,7 +226,8 @@ perdió ni quedó duplicada.
    paralelo** con la 3.5 mientras ésta acumula datos.
    **Antes de la Etapa 5:** calibrar el presupuesto de entrenamiento sobre el fixture
    4b (ver *Invariantes del Agente A*), con la grilla declarada en un ADR antes de
-   correrla.
+   correrla. **Hecho el 2026-10-25:** la configuración del estudio es R3 a 120 000
+   timesteps (ADR 0010 y 0011) y el protocolo completo pasa con ella.
 5. **Agente B** y comparación controlada contra A.
 6. **Barrido** de regímenes y capital. `PortfolioSimulator` multi-activo.
 7. **Paper trading** en vivo. No arranca de cero: hereda los meses de datos de la 3.5.
