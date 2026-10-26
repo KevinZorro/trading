@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from data.schema import BarSeries, FloatArray
+from data.schema import BarSeries, ExogColumn, FloatArray
 from features.scaler import FeatureScaler
 from features.technical import atr, bollinger, macd, normalized_volume, rsi
 from sim.engine import Decision
@@ -41,10 +41,15 @@ class ObservationSpec:
     bollinger_period: int = 20
     bollinger_k: float = 2.0
     volume_period: int = 20
+    # Columnas exogenas que se agregan AL FINAL, tras las de A. Vacio = Agente A.
+    exog: tuple[ExogColumn, ...] = ()
 
     def __post_init__(self) -> None:
         if self.lookback < 1:
             raise ValueError("lookback debe ser positivo")
+        nombres = [c.name for c in self.exog]
+        if len(set(nombres)) != len(nombres):
+            raise ValueError("exog tiene nombres repetidos")
 
     @property
     def warmup(self) -> int:
@@ -64,7 +69,11 @@ class ObservationSpec:
         )
 
     def describe(self) -> dict[str, object]:
+        extra: dict[str, object] = {}
+        if self.exog:  # sin exogenas la forma serializada es la de siempre
+            extra["exog"] = [{"name": c.name, "scaled": c.scaled} for c in self.exog]
         return {
+            **extra,
             "lookback": self.lookback,
             "rsi_period": self.rsi_period,
             "macd_fast": self.macd_fast,
@@ -122,7 +131,18 @@ class ObservationBuilder:
             nombres.append(nombre)
             escalar.append(False)
 
+        for columna in spec.exog:
+            nombres.append(columna.name)
+            escalar.append(columna.scaled)
+
         return tuple(nombres), tuple(escalar)
+
+    @property
+    def maskable_mask(self) -> tuple[bool, ...]:
+        """Columnas que pueden venir enmascaradas: las exogenas escaladas."""
+        n_exog = len(self.spec.exog)
+        base = len(self._names) - n_exog
+        return (False,) * base + tuple(c.scaled for c in self.spec.exog)
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -196,6 +216,15 @@ class ObservationBuilder:
         else:
             valores.append(0.0)
 
+        if spec.exog:
+            esperadas = tuple(c.name for c in spec.exog)
+            if view.exog_names != esperadas:
+                raise ValueError(
+                    f"la serie trae las exogenas {view.exog_names} y la observacion "
+                    f"pide {esperadas}"
+                )
+            valores.extend(float(v) for v in view.exog_row())
+
         vector = np.asarray(valores, dtype=np.float64)
         if len(vector) != len(self._names):
             raise ValueError(
@@ -251,4 +280,5 @@ def fit_scaler_on_train(
         np.asarray(filas, dtype=np.float64),
         constructor.names,
         constructor.scale_mask,
+        constructor.maskable_mask,
     )

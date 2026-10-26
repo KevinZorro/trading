@@ -36,3 +36,9 @@ Consolidados en la Etapa 2. El env es un **wrapper delgado**: rutea, no calcula.
   en cada barra previa. Esas barras quedan en el `SimResult` sin fills, que es la verdad.
 - **Gymnasium**: `terminated=True` solo por ruina (equity <= 0); agotarse los datos es
   `truncated=True`. La acción del último paso **expira sin ejecutarse** y da reward 0.
+- **Columnas exógenas (N5)**: viajan en `BarSeries.exog` y `MarketView` las corta en
+  `[0..t]` como al precio; el builder las agrega **al final**, tras las de A
+  (`ObservationSpec.exog`). Sin ellas, layout y serialización de A no cambian ni un bit.
+  Un `NaN` es "enmascarado": el escalador se ajusta sin ellos (solo en train) y lo deja
+  en 0 tras escalar; solo las columnas `maskable` lo admiten. Nunca `ffill`. El placebo
+  es la misma matriz con `lag` (`features.news.with_news`), no otra ruta.

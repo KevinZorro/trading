@@ -112,6 +112,12 @@ class TradingEnv(gym.Env[FloatArray, FloatArray]):
                 f"{len(self._builder.names)}"
             )
         self._scaler = scaler
+        pedidas = tuple(c.name for c in self._config.observation.exog)
+        if series.exog_names != pedidas:
+            raise ValueError(
+                f"la serie trae las exogenas {series.exog_names} y la observacion "
+                f"pide {pedidas}"
+            )
 
         cota = self._config.observation_bound
         self.observation_space = spaces.Box(

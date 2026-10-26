@@ -33,7 +33,7 @@ barra, con los puntajes de ``features.finbert_dataset.attach_finbert`` (``finber
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import numpy.typing as npt
@@ -41,7 +41,7 @@ import pandas as pd
 
 from data.errors import DataValidationError
 from data.news_aggregate import COVERAGE_MIN_BATCHES, healthy_batches
-from data.schema import FloatArray, TimeArray
+from data.schema import BarSeries, ExogColumn, FloatArray, TimeArray
 from features.scaler import DESVIO_MINIMO
 
 # ADR 0012, 2.2 (K2, Kevin 2026-10-25). Explicita: DEFAULT_LATENCY de data.news es 30.
@@ -58,6 +58,11 @@ NEWS_FEATURE_NAMES: tuple[str, ...] = (
     "coverage_ok",
 )
 SCALED_FEATURES = 5  # las columnas 1 a 5; 6 y 7 son indicadores sin escalar
+# Las columnas de B para ``ObservationSpec.exog``: 1 a 5 con z-score de train, 6 y 7 no.
+NEWS_EXOG: tuple[ExogColumn, ...] = tuple(
+    ExogColumn(nombre, scaled=i < SCALED_FEATURES)
+    for i, nombre in enumerate(NEWS_FEATURE_NAMES)
+)
 Z_WINDOW, Z_MIN_VALID = 30, 20
 DELTA_WINDOW, DELTA_MIN_VALID = 7, 4
 _DIA = np.timedelta64(1, "D")
@@ -172,3 +177,16 @@ def _delta(tone: FloatArray) -> FloatArray:
     )
     media = previas.mean().to_numpy(np.float64)
     return np.asarray(tone - media, dtype=np.float64)
+
+
+def with_news(
+    series: BarSeries, table: NewsFeatureTable, lag: np.timedelta64 = _SIN_LAG
+) -> BarSeries:
+    """La serie con las siete columnas de noticias de cada barra (brazo B).
+
+    ``lag = PLACEBO_LAG`` da el brazo placebo. Falla si alguna barra no tiene fila
+    en la tabla: nunca se rellena. ``series.timestamp`` es el cierre de la barra
+    (convencion temporal del repo), igual que ``table.closes``.
+    """
+    valores = table.at(series.timestamp, lag)
+    return replace(series, exog=valores, exog_names=NEWS_FEATURE_NAMES)
