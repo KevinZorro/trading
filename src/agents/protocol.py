@@ -460,8 +460,13 @@ def run_arm(
     safety: float = 0.98,
     allow_fewer_seeds: bool = False,
     blind: bool = False,
+    on_trained: Callable[[Policy, int], None] | None = None,
 ) -> ArmResult:
     """Entrena y evalua un fixture sobre varias semillas.
+
+    ``on_trained(politica, semilla)`` se llama con cada politica ya obtenida y
+    antes de evaluarla: es como la puerta del Agente B guarda las politicas que
+    despues re-diagnostica, sin reentrenarlas.
 
     ``blind`` es el Agente A sobre un fixture con columnas exogenas: el agente no
     las ve (ni el escalador ni el entorno), pero el techo se sigue calculando con
@@ -526,6 +531,8 @@ def run_arm(
             )
         else:
             politica = policy_factory(train, semilla)
+        if on_trained is not None:
+            on_trained(politica, semilla)
         salida = run_policy(construir(validacion), politica, seed=semilla)
         reporte = evaluate_run(salida.result)
         sigma = politica.sigma() if isinstance(politica, SB3Policy) else None
