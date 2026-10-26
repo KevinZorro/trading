@@ -204,7 +204,7 @@ Etapa 4 está en curso. Las reglas y la lista de
 etapas están en [`CLAUDE.md`](CLAUDE.md); aquí se rastrea cada hito hasta su PR y su
 evidencia en el repositorio.
 
-Estado al 2026-10-25. Los números de PR son de GitHub; "mergeado" quiere decir que
+Estado al 2026-10-26. Los números de PR son de GitHub; "mergeado" quiere decir que
 está en `main`. Cuando cambia un hito, se actualiza esta tabla en el mismo PR.
 
 ### Etapas 1 a 3: simulador, entorno y Agente A
@@ -286,7 +286,7 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 | P1: grilla del presupuesto de entrenamiento sobre 4b, declarada antes de correrla | `src/agents/CLAUDE.md` (deuda antes de la Etapa 5), ADR 0005 | #48 | mergeado | `docs/adr/0010-presupuesto-de-entrenamiento-sobre-4b.md` |
 | P2: calibración y re-corrida del protocolo con el presupuesto elegido | ADR 0010 | #50, #52, #53 | mergeado; corrido: G1 a G4 fallan 4b, lo que llevó a la segunda ronda (P3). #52 importa torch antes que numpy en Windows y #53 tolera CRLF en el SHA256 del ADR | `src/agents/calibration.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_calibration.py` |
 | P2b: diagnóstico de por qué 4b no pasa a ningún presupuesto (`calibrate diagnose`) | ADR 0010 §4 | #57 | mergeado; corrido (ningún grupo solo explica la rotación) | `src/agents/diagnosis.py`, `tests/agents/test_diagnosis.py`, `results/calibracion/summary.json` |
-| P3: segunda ronda de calibración, escalera de regularización declarada antes de correrla | ADR 0010 §4, diagnóstico de #57 | #60 | mergeado; escalera elegida (R1 a R3, sin penalización); sin correr | `docs/adr/0011-segunda-ronda-de-calibracion-regularizacion.md` |
+| P3: segunda ronda de calibración, escalera de regularización declarada antes de correrla | ADR 0010 §4, diagnóstico de #57 | #60 | mergeado; escalera elegida (R1 a R3, sin penalización); se corrió en P3b (#61) | `docs/adr/0011-segunda-ronda-de-calibracion-regularizacion.md` |
 | P3b: script de la escalera R1 a R3 (`calibrate ladder`), pareado contra G1 | ADR 0011 | #61 | mergeado; corrido: R1 y R2 fallan, **R3 pasa 4b** (`C*` = R3) | `src/agents/regularization.py`, `docs/calibracion-presupuesto.md`, `tests/agents/test_regularization.py` |
 | P3c: confirmación de `C*` = R3 con el protocolo completo, reanudable, y re-diagnóstico | ADR 0011 §5 y §6 | #62 | mergeado; **corrido: protocolo completo en verde con R3** (4b y el par PASS por primera vez). `C*` = R3 a 120 000 timesteps queda fijo para el estudio | `src/agents/confirmation.py`, `results/regularizacion/summary.json`, `docs/calibracion-presupuesto.md`, `tests/agents/test_confirmation.py` |
 | P3d: registro del resultado de la confirmación (resumen, deuda de la Etapa 5 saldada) | ADR 0011 §5 regla 3 | #63 | mergeado | `results/confirmacion/summary.json`, `docs/calibracion-presupuesto.md`, `src/agents/CLAUDE.md`, `CLAUDE.md` |
@@ -297,7 +297,7 @@ vivo y la pista P, el presupuesto de entrenamiento. Aquí se rastrean los PRs.
 
 | Etapa | Estado |
 |---|---|
-| 4. Pipeline de noticias con validación point-in-time | en curso: mergeados L1 (#47, #58), N1 (#49), N2 (#51, #55, #56), N3 (#66), N7 (#65) y la pista P completa (#48 a #64, `C*` = R3). Ver la tabla de la Etapa 4 |
-| 5. Agente B y comparación controlada contra A | pre-registro (ADR 0012) mergeado (#65) |
+| 4. Pipeline de noticias con validación point-in-time | en curso: mergeados L1 (#47, #58), N1 (#49), N2 (#51, #55, #56), N2b (#68), N3 (#66), N4 (#67), N5 (#69), N7 (#65) y la pista P completa (#48 a #64, `C*` = R3). Falta N6 (puerta sobre fixtures), N8 y N9. Ver la tabla de la Etapa 4 |
+| 5. Agente B y comparación controlada contra A | pre-registro (ADR 0012) mergeado (#65); entorno con columnas de noticias mergeado (#69); sin entrenar B |
 | 6. Barrido de regímenes y capital, `PortfolioSimulator` multi-activo | sin empezar |
 | 7. Paper trading en vivo (3 a 6 meses antes de capital real) | sin empezar; hereda los datos de la 3.5 |
