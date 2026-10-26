@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from data.errors import DataValidationError
+from data.manifest import verify_manifest
 from features.finbert import ScoredArticle
 
 AGGREGATE_COLUMNS: tuple[str, ...] = ("label", "n_scored", "score_sum")
@@ -128,6 +129,11 @@ def write_aggregates(frame: pd.DataFrame, path: Path) -> int:
             escritor.writerow((r.label, r.n_scored, repr(float(r.score_sum))))
         texto.flush()
     return len(frame)
+
+
+def read_finbert_aggregates(manifest_path: Path) -> pd.DataFrame:
+    """Agregados verificados contra su manifest (SHA256), como ``read_aggregates``."""
+    return pd.read_csv(verify_manifest(manifest_path))
 
 
 def attach_finbert(frame: pd.DataFrame, finbert: pd.DataFrame) -> pd.DataFrame:

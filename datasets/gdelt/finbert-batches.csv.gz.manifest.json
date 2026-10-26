@@ -1,0 +1,21 @@
+{
+  "file": "finbert-batches.csv.gz",
+  "sha256": "e85ea25ba064a1072db4ca3d1834c8d1dc2ae7cc49806316eae54c0bfe849d4d",
+  "rows": 216243,
+  "first_timestamp": "2019-09-22T14:45:00Z",
+  "last_timestamp": "2026-09-27T23:30:00Z",
+  "symbol": "ECON_BITCOIN",
+  "interval": "15m",
+  "source": "https://huggingface.co/ProsusAI/finbert",
+  "downloaded_at": "2026-10-26",
+  "script": "scripts/puntuar_titulares.py",
+  "notes": [
+    "modelo ProsusAI/finbert revision 0bc2ac10dda6929bcb1f77ccc43c7ec5c424f031; SHA256 de cada archivo en features.finbert.MODEL_FILES (model.safetensors e5897858ff819aad7629b96ce521ae5477952d03634ef5dd30ed2d76357a9f00)",
+    "crudo: MANIFEST.json SHA256 eb5f28df549fde2021740a0eae5272fe17f42e161579363a28ec685700936c26",
+    "nivel articulo: finbert-articles.jsonl SHA256 5d3681b08d5762e5c6e61d94a04a0414608a450ff34ea461b9dfda141fb3170c, 1412307 articulos (va al Release)",
+    "dedup por titulo normalizado, primera aparicion, ventana 24 hours",
+    "fp32 en CPU, modo evaluacion, max_length 128, lote fijo",
+    "torch 2.9.1+cpu, transformers 5.20.2",
+    "n_scored = articulos conservados del lote; score_sum = suma de P(positivo) - P(negativo); solo se listan los lotes con articulos"
+  ]
+}

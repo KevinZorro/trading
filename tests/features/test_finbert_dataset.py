@@ -10,12 +10,14 @@ import pandas as pd
 import pytest
 
 from data.errors import DataValidationError
+from data.manifest import DatasetManifest, ManifestError, sha256_of, write_manifest
 from features.finbert import ScoredArticle
 from features.finbert_dataset import (
     aggregate_by_batch,
     append_articles,
     attach_finbert,
     read_articles,
+    read_finbert_aggregates,
     repair_tail,
     write_aggregates,
 )
@@ -100,3 +102,20 @@ def test_attach_finbert_rellena_con_cero_y_rechaza_rotulos_ajenos() -> None:
     ajeno = fin.assign(label=["2021-01-01T00:15:00Z"])
     with pytest.raises(DataValidationError, match="fuera de la rejilla"):
         attach_finbert(frame, ajeno)
+
+
+def test_read_finbert_aggregates_verifica_el_sha256(tmp_path: Path) -> None:
+    frame = pd.DataFrame(
+        {"label": ["2020-01-01T00:15:00Z"], "n_scored": [3], "score_sum": [0.1]}
+    )
+    csv = tmp_path / "f.csv.gz"
+    write_aggregates(frame, csv)
+    manifest = DatasetManifest(
+        "f.csv.gz", sha256_of(csv), 1, "a", "b", "X", "15m", "s", "2026-10-26", "x"
+    )
+    ruta = tmp_path / "f.csv.gz.manifest.json"
+    write_manifest(manifest, ruta)
+    assert read_finbert_aggregates(ruta)["n_scored"].tolist() == [3]
+    csv.write_bytes(csv.read_bytes() + b"x")
+    with pytest.raises(ManifestError, match="SHA256"):
+        read_finbert_aggregates(ruta)
