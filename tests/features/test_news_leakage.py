@@ -90,3 +90,19 @@ def test_el_placebo_de_t_no_depende_de_nada_posterior_a_close_t_menos_364() -> N
         base.at(np.array([c]), np.timedelta64(364, "D")),
         alterado.at(np.array([c]), np.timedelta64(364, "D")),
     )
+
+
+def test_finbert_de_lotes_posteriores_al_cierre_no_cambia_esa_fila() -> None:
+    frame = variada(60)
+    frame["finbert_n"] = frame["n_titled"]
+    frame["finbert_sum"] = 0.1 * frame["n_titled"]
+    base = build_news_features(frame)
+    c = cierre("2020-02-15")
+    despues = (frame["label"] + LAT) > pd.Timestamp(c)
+    sucio = frame.copy()
+    sucio.loc[despues, "finbert_n"] = 7
+    sucio.loc[despues, "finbert_sum"] = 7.0
+    alterado = build_news_features(sucio)
+    k = int(np.searchsorted(base.closes, c, "right"))
+    np.testing.assert_array_equal(base.values[:k], alterado.values[:k])
+    assert not np.array_equal(base.values[k:], alterado.values[k:], equal_nan=True)
