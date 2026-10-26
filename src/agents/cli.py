@@ -269,12 +269,13 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         "confirm-report": "results/confirmacion",
         "gate": "results/puerta",
         "gate-report": "results/puerta",
+        "gate-diagnose": "results/puerta",
     }.get(args.action, "results/calibracion")
     out = Path(args.out or por_defecto)
     if args.action in ("worker", "diagnose", "confirm", "confirm-report"):
         from agents import confirmation as conf
         from agents import diagnosis as dg
-    if args.action in ("worker", "gate", "gate-report"):
+    if args.action in ("worker", "gate", "gate-report", "gate-diagnose"):
         from agents import gate
 
     if args.action == "worker":
@@ -346,7 +347,7 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         print(reg.render(escalera))
         print(f"\nescrito {ruta}")
         return 0
-    if args.action in ("gate", "gate-report"):
+    if args.action in ("gate", "gate-report", "gate-diagnose"):
         # ADR 0012 seccion 5: la puerta del Agente B, reanudable. Sello propio: el
         # de N8 es otro y lo escribe N8.
         adr12 = next(Path.cwd().glob("docs/adr/0012-*.md"))
@@ -357,6 +358,14 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
                 cal.run_point(
                     out, b_puerta.point, args.workers, gate.arm_units(b_puerta.point)
                 )
+        if args.action == "gate-diagnose":
+            # Re-diagnostico con el grupo noticias, sobre las politicas de B que
+            # guardo la puerta (ADR 0012 seccion 5).
+            from agents import gate_diagnosis
+
+            for nombre, r in gate_diagnosis.run(out).items():
+                print(f"{nombre}: {r['reading']}")
+            return 0
         for nivel in gate.assess(out):
             print(f"[{nivel.verdict}] {nivel.label}\n  {nivel.finding}")
         return 0
@@ -461,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
             "confirm-report",
             "gate",
             "gate-report",
+            "gate-diagnose",
         ],
     )
     c.add_argument("--out", default=None)

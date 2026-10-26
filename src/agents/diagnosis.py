@@ -36,7 +36,7 @@ from agents.policy import Policy
 from agents.ppo import PPOConfig, train_ppo
 from agents.protocol import STUDY_SEEDS, ProtocolThresholds, _sim_config
 from agents.runner import build_env, run_policy, scaler_for
-from data.fixtures import DEFAULT_N_BARS, level_4b_detectable_drift
+from data.fixtures import DEFAULT_N_BARS, Ceilings, level_4b_detectable_drift
 from data.schema import FloatArray
 from envs.observation import ObservationBuilder, ObservationSpec
 from envs.rewards import NetReturnReward
@@ -137,9 +137,24 @@ class _Fixed:
 
 
 def diagnose_policy(
-    policy: Policy, make_env: Callable[[], TradingEnv], groups: dict[str, list[int]]
+    policy: Policy,
+    make_env: Callable[[], TradingEnv],
+    groups: dict[str, list[int]],
+    *,
+    ceilings: Ceilings | None = None,
 ) -> dict[str, Any]:
-    """Dispersion de la accion con cada grupo fijo, en lazo abierto y cerrado."""
+    """Dispersion de la accion con cada grupo fijo, en lazo abierto y cerrado.
+
+    Con ``ceilings`` agrega el ``capture`` del episodio base y, por grupo, el de
+    lazo cerrado: es lo que pide el control positivo del ADR 0012 (5), donde
+    fijar las noticias tiene que hundir el ``capture``.
+    """
+
+    def captura(salida: Any) -> float | None:
+        if ceilings is None:
+            return None
+        return ceilings.capture(np.asarray(salida.result.equity, dtype=np.float64))
+
     grabadora = _Recorder(policy)
     base = run_policy(make_env(), grabadora)
     acciones = np.asarray(base.actions, dtype=np.float64)
@@ -149,6 +164,7 @@ def diagnose_policy(
         "n_steps": len(acciones),
         "action_std": float(acciones.std()),
         "mean_action": float(acciones.mean()),
+        "capture": captura(base),
         "groups": {},
     }
     for nombre, idx in groups.items():
@@ -160,6 +176,7 @@ def diagnose_policy(
             "open_loop_action_std": float(abierto.std()),
             "open_loop_mean_abs_change": float(np.abs(abierto - acciones).mean()),
             "closed_loop_action_std": float(np.std(cerrado.actions)),
+            "closed_loop_capture": captura(cerrado),
         }
     return salida
 
