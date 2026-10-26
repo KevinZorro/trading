@@ -29,12 +29,14 @@ from data.schema import OHLCV_FIELDS, BarSeries, FloatArray, TimeArray
 class MarketView:
     """Vista inmutable de la serie hasta la barra ``t`` inclusive."""
 
-    __slots__ = ("_fields", "_instrument", "_t", "_timestamp")
+    __slots__ = ("_exog", "_exog_names", "_fields", "_instrument", "_t", "_timestamp")
 
     _fields: dict[str, FloatArray]
     _timestamp: TimeArray
     _instrument: InstrumentSpec
     _t: int
+    _exog: FloatArray | None
+    _exog_names: tuple[str, ...]
 
     def __init__(self, series: BarSeries, t: int) -> None:
         if not 0 <= t < len(series):
@@ -44,6 +46,9 @@ class MarketView:
         self._timestamp = series.timestamp[: t + 1]
         self._instrument = series.instrument
         self._t = t
+        # Igual que el precio: solo [0..t]. Las filas posteriores no estan en el objeto.
+        self._exog = None if series.exog is None else series.exog[: t + 1]
+        self._exog_names = series.exog_names
 
     # -- identidad ------------------------------------------------------
 
@@ -103,6 +108,20 @@ class MarketView:
 
     def volume(self, lookback: int = 0) -> float:
         return self._at("volume", lookback)
+
+    # -- columnas exogenas ------------------------------------------------
+
+    @property
+    def exog_names(self) -> tuple[str, ...]:
+        return self._exog_names
+
+    def exog_row(self) -> FloatArray:
+        """Fila exogena de la barra ``t`` (copia de solo lectura; ``NaN`` = masked)."""
+        if self._exog is None:
+            raise KeyError("la serie no tiene columnas exogenas")
+        out = np.array(self._exog[-1], dtype=np.float64, copy=True)
+        out.flags.writeable = False
+        return out
 
     # -- acceso vectorial -----------------------------------------------
 

@@ -42,6 +42,7 @@ from envs.observation import ObservationBuilder, ObservationSpec
 from envs.rewards import NetReturnReward
 from envs.trading_env import EnvConfig, TradingEnv
 from eval.distribution import summarize
+from features.news import NEWS_FEATURE_NAMES
 from sim.sizing import TargetWeightSizer
 
 #: Disjuntos de ``PATH_SEEDS`` (701 a 761) y de ``CALIBRATION_PATH_SEEDS``.
@@ -82,6 +83,8 @@ def feature_groups(names: tuple[str, ...]) -> dict[str, list[int]]:
             "last_fill_ratio",
         ):
             grupos["resultado_orden"].append(i)
+        elif nombre in NEWS_FEATURE_NAMES:
+            grupos.setdefault("noticias", []).append(i)
         else:
             grupos["tecnicos"].append(i)
     return grupos
@@ -143,7 +146,7 @@ def diagnose_policy(
     obs = np.asarray(grabadora.observations, dtype=np.float64)
     medias = obs.mean(axis=0)
     salida: dict[str, Any] = {
-        "n_steps": int(len(acciones)),
+        "n_steps": len(acciones),
         "action_std": float(acciones.std()),
         "mean_action": float(acciones.mean()),
         "groups": {},

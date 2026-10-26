@@ -41,6 +41,19 @@ ADJUSTED_COLUMN_HINTS: tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class ExogColumn:
+    """Una columna exogena (no es precio) que el entorno agrega a la observacion.
+
+    ``scaled`` dice si lleva z-score ajustado en train (``False`` para indicadores
+    0/1). Una columna exogena puede venir enmascarada (``NaN``): el escalador la
+    ajusta sin los ``NaN`` y la deja en 0 despues de escalar.
+    """
+
+    name: str
+    scaled: bool = True
+
+
 def _freeze(array: npt.ArrayLike, name: str, dtype: Any) -> npt.NDArray[Any]:
     """Copia a un array contiguo de solo lectura.
 
@@ -74,6 +87,12 @@ class BarSeries:
     split_factor: FloatArray
     cash_dividend: FloatArray
     source: str = "unknown"
+    # Columnas exogenas alineadas con ``timestamp``: la fila ``i`` solo contiene lo
+    # conocido al cierre de la barra ``i`` (lo garantiza quien la construye, p. ej.
+    # ``features.news.with_news``). ``NaN`` = enmascarado. Sin ellas, la serie y su
+    # serializacion son las de siempre.
+    exog: FloatArray | None = None
+    exog_names: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -92,6 +111,25 @@ class BarSeries:
                 )
         if n == 0:
             raise SchemaError("BarSeries vacia")
+        self._validate_exog(n)
+
+    def _validate_exog(self, n: int) -> None:
+        if self.exog is None:
+            if self.exog_names:
+                raise SchemaError("exog_names sin matriz exog")
+            return
+        matriz = np.ascontiguousarray(np.asarray(self.exog, dtype=np.float64))
+        if matriz.ndim != 2 or matriz.shape != (n, len(self.exog_names)):
+            raise SchemaError(
+                f"exog debe ser ({n}, {len(self.exog_names)}) y es {matriz.shape}"
+            )
+        if len(set(self.exog_names)) != len(self.exog_names):
+            raise SchemaError("exog_names tiene nombres repetidos")
+        if np.isinf(matriz).any():
+            raise SchemaError("exog tiene valores infinitos (solo NaN = enmascarado)")
+        matriz.flags.writeable = False
+        object.__setattr__(self, "exog", matriz)
+        object.__setattr__(self, "exog_names", tuple(self.exog_names))
 
     # -- acceso ---------------------------------------------------------
 
@@ -115,7 +153,8 @@ class BarSeries:
         if not (0 <= start < stop <= n):
             raise SchemaError(f"slice invalido ({start}, {stop}) sobre n={n}")
         kwargs = {f: getattr(self, f)[start:stop] for f in OHLCV_FIELDS + EVENT_FIELDS}
-        return replace(self, timestamp=self.timestamp[start:stop], **kwargs)
+        exog = None if self.exog is None else self.exog[start:stop]
+        return replace(self, timestamp=self.timestamp[start:stop], exog=exog, **kwargs)
 
     def has_corporate_actions(self) -> bool:
         return bool(
@@ -124,7 +163,11 @@ class BarSeries:
 
     def meta(self) -> dict[str, Any]:
         """Metadatos serializables para guardar junto a cada resultado."""
+        extra: dict[str, Any] = (
+            {"exog_names": list(self.exog_names)} if self.exog_names else {}
+        )
         return {
+            **extra,
             "symbol": self.symbol,
             "venue": self.instrument.venue,
             "asset_class": self.instrument.asset_class,
