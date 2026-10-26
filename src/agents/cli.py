@@ -15,6 +15,7 @@ se peleen por los mismos nucleos:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Callable
@@ -265,11 +266,15 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         "ladder-report": "results/regularizacion",
         "confirm": "results/confirmacion",
         "confirm-report": "results/confirmacion",
+        "gate": "results/puerta",
+        "gate-report": "results/puerta",
     }.get(args.action, "results/calibracion")
     out = Path(args.out or por_defecto)
     if args.action in ("worker", "diagnose", "confirm", "confirm-report"):
         from agents import confirmation as conf
         from agents import diagnosis as dg
+    if args.action in ("worker", "gate", "gate-report"):
+        from agents import gate
 
     if args.action == "worker":
         # Proceso hijo de ``run``: ya paso por la verificacion del sello.
@@ -279,6 +284,8 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         elif args.point == conf.REDIAGNOSIS_POINT:
             todas = conf.rediagnosis_units()
             entrenar = conf.train_rediagnosis_unit
+        elif gate.is_point(args.point):
+            todas, entrenar = gate.arm_units(args.point), gate.train_unit
         elif conf.is_point(args.point):
             todas, entrenar = conf.arm_units(args.point), conf.train_unit
         elif reg.is_rung(args.point):
@@ -336,6 +343,20 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
         ruta = reg.finalize(out, escalera)
         print(reg.render(escalera))
         print(f"\nescrito {ruta}")
+        return 0
+    if args.action in ("gate", "gate-report"):
+        # ADR 0012 seccion 5: la puerta del Agente B, reanudable. Sello propio: el
+        # de N8 es otro y lo escribe N8.
+        adr12 = next(Path.cwd().glob("docs/adr/0012-*.md"))
+        crudo = adr12.read_bytes().replace(b"\r\n", b"\n")
+        cal.acquire_seal(out, hashlib.sha256(crudo).hexdigest(), gate.config_digest())
+        if args.action == "gate":
+            for b_puerta in gate.ARMS:
+                cal.run_point(
+                    out, b_puerta.point, args.workers, gate.arm_units(b_puerta.point)
+                )
+        for nivel in gate.assess(out):
+            print(f"[{nivel.verdict}] {nivel.label}\n  {nivel.finding}")
         return 0
     if args.action in ("confirm", "confirm-report"):
         # ADR 0011 seccion 5: protocolo completo con C*, reanudable.
@@ -436,6 +457,8 @@ def main(argv: list[str] | None = None) -> int:
             "ladder-report",
             "confirm",
             "confirm-report",
+            "gate",
+            "gate-report",
         ],
     )
     c.add_argument("--out", default=None)
