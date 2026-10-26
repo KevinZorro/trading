@@ -39,9 +39,14 @@ Ver `docs/adr/0002-fixtures-sinteticos-de-validacion.md`. Cinco niveles en
   docstring: `series.source` empieza con `fixture:` y `Fixture` lo exige, así que
   viaja dentro de `SimResult.config` y cualquier corrida sobre un fixture es
   identificable en el tracking.
-- **La señal va embebida en el precio, nunca en una columna aparte.** La
-  observación del entorno es cerrada; una columna exógena sería invisible para el
-  agente. El estado predictivo es el último log-retorno, o sea la feature
+- **La señal va embebida en el precio, nunca en una columna aparte, salvo en el
+  nivel 5a** (ADR 0012 §5), que existe justamente para probar que una columna
+  exógena le llega a B: ahí `tone_mean` predice `r_{t+1}` con `corr = beta = 0,3` y
+  el precio casi no contiene nada (`R² = 0,0024`). El 5b es el 4b más siete columnas
+  de ruido. Los niveles 0 a 4 siguen con la regla. Para el Agente A sobre el 5b,
+  `Fixture.without_exog()`; el 5a no lo admite porque su techo usa la columna.
+  En los demás niveles la observación del entorno es cerrada y una columna
+  exógena sería invisible para el agente. El estado predictivo es el último log-retorno, o sea la feature
   `log_return_{lookback-1}`. Consecuencia: los niveles 0 y 1 validan el
   **pipeline**, no el descubrimiento de una señal escondida.
 - **`SignalSpec` se parametriza por momentos estacionarios** (`drift`,
