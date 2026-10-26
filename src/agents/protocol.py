@@ -50,7 +50,7 @@ from data.fixtures import (
     myopic_states,
     periodic_rate_per_bar,
 )
-from data.schema import FloatArray
+from data.schema import BarSeries, FloatArray
 from envs.observation import ObservationSpec
 from envs.rewards import NetReturnReward
 from envs.trading_env import EnvConfig
@@ -152,6 +152,14 @@ class ProtocolThresholds:
       positiva y distinguirse de cero. Cero es el umbral correcto y no un numero
       elegido: la hipotesis nula es "el agente se comporta igual con drift y sin
       drift", y cualquier umbral positivo la estaria reemplazando por otra.
+
+    Umbral de la puerta del Agente B (ADR 0012, 5), declarado antes de correrla:
+
+    - ``level_5a_min_capture = 0.50``: mediana entre caminos del ``capture`` de B
+      cuando la senal esta en una columna exogena. Es el umbral del nivel 1 en su
+      SNR mas alto, con el mismo ``beta``; el A del nivel 1 capturo 0.908. El
+      segundo criterio, el ``t`` pareado B - A, usa el critico de
+      ``t_critical_95(N - 1)`` (2.262 con N = 10) y no se declara aqui.
     """
 
     level_0_min_capture: float = 0.80
@@ -163,6 +171,7 @@ class ProtocolThresholds:
     level_4b_min_time_invested: float = 0.80
     level_4b_max_action_std: float = 0.15
     level_4_pair_min_time_invested_gap: float = 0.0
+    level_5a_min_capture: float = 0.50
 
     def describe(self) -> dict[str, object]:
         return dict(vars(self))
@@ -450,8 +459,13 @@ def run_arm(
     observation: ObservationSpec | None = None,
     safety: float = 0.98,
     allow_fewer_seeds: bool = False,
+    blind: bool = False,
 ) -> ArmResult:
     """Entrena y evalua un fixture sobre varias semillas.
+
+    ``blind`` es el Agente A sobre un fixture con columnas exogenas: el agente no
+    las ve (ni el escalador ni el entorno), pero el techo se sigue calculando con
+    ellas. Es lo que permite parear B y A sobre el mismo mercado en el nivel 5.
 
     Secuencia por semilla, y el orden importa:
 
@@ -469,7 +483,11 @@ def run_arm(
     """
     train, validacion, _test = fixture.split()
     config_sim = _sim_config(fixture, initial_cash, cash_rate)
-    escalador = scaler_for(train.series, observation)
+
+    def vista(serie: BarSeries) -> BarSeries:
+        return replace(serie, exog=None, exog_names=()) if blind else serie
+
+    escalador = scaler_for(vista(train.series), observation)
     env_config = EnvConfig(
         observation=observation or ObservationSpec(),
         sizer=TargetWeightSizer(safety=safety),
@@ -477,7 +495,7 @@ def run_arm(
 
     def construir(serie_fixture: Fixture) -> Any:
         return build_env(
-            serie_fixture.series,
+            vista(serie_fixture.series),
             config_sim,
             scaler=escalador,
             env_config=env_config,
@@ -1053,6 +1071,7 @@ def run_multipath_arm(
     observation: ObservationSpec | None = None,
     safety: float = 0.98,
     allow_fewer_seeds: bool = False,
+    blind: bool = False,
 ) -> MultiPathResult:
     """Corre el mismo nivel sobre ``N`` caminos, con ``M`` semillas cada uno.
 
@@ -1082,6 +1101,7 @@ def run_multipath_arm(
                 observation=observation,
                 safety=safety,
                 allow_fewer_seeds=allow_fewer_seeds,
+                blind=blind,
             )
         )
     return MultiPathResult(
@@ -1367,6 +1387,123 @@ def evaluate_level_4_pair(
             "drift: el par es lo unico que lo revela."
         )
     return LevelResult(4, "4a<->4b el par", veredicto, criterio, hallazgo, ())
+
+
+def _pair_labels(b: MultiPathResult, a: MultiPathResult) -> str | None:
+    """Motivo por el que B y A no se pueden parear, o ``None`` si se pueden."""
+    if a.path_seeds != b.path_seeds:
+        return (
+            "B y A no comparten las semillas de camino, asi que no hay pares: "
+            f"{b.path_seeds} contra {a.path_seeds}"
+        )
+    return None
+
+
+def evaluate_level_5a(
+    agent_b: MultiPathResult, agent_a: MultiPathResult, thresholds: ProtocolThresholds
+) -> LevelResult:
+    """Control positivo del Agente B (ADR 0012, 5a). **Bloquea** los datos reales.
+
+    La senal vive en ``tone_mean`` y casi nada en el precio. Se exigen dos cosas:
+
+    1. la mediana entre caminos del ``capture`` de B alcanza
+       ``level_5a_min_capture``; y
+    2. la diferencia pareada B - A de ``capture`` es positiva y su ``t`` entre
+       caminos supera el critico de ``t_critical_95(N - 1)``.
+
+    Si falla, un NO APORTA sobre BTC no se podria leer: no se sabria si las
+    noticias no informan o si B no puede usar una columna exogena.
+    """
+    criterio = (
+        f"mediana entre caminos del capture de B >= "
+        f"{thresholds.level_5a_min_capture:.2f} y diferencia pareada B - A de "
+        "capture positiva con t entre caminos sobre el critico (2.262 con N = 10)"
+    )
+    etiqueta = "5a control positivo (senal en tone_mean)"
+    if agent_b.n_paths < thresholds.level_4_min_paths:
+        return LevelResult(
+            5,
+            etiqueta,
+            Verdict.FAIL,
+            criterio,
+            f"solo hay {agent_b.n_paths} caminos y el criterio necesita "
+            f"{thresholds.level_4_min_paths}",
+            agent_b.arms,
+        )
+    motivo = _pair_labels(agent_b, agent_a)
+    if motivo is not None:
+        return LevelResult(5, etiqueta, Verdict.FAIL, criterio, motivo, ())
+    cap_b = agent_b.decompositions.get("capture")
+    cap_a = agent_a.decompositions.get("capture")
+    if cap_b is None or cap_a is None:
+        return LevelResult(
+            5,
+            etiqueta,
+            Verdict.FAIL,
+            criterio,
+            "capture no esta definido en alguno de los caminos (el techo coincide "
+            "con estar siempre invertido o queda por debajo): el fixture no tiene "
+            "lo que dice tener",
+            agent_b.arms,
+        )
+    mediana = float(np.median(cap_b.path_medians))
+    brecha = paired_difference(cap_a, cap_b, label_a="A (ciego)", label_b="B")
+    gana = brecha.distinguishable_from_zero and brecha.mean > 0.0
+    captura = mediana >= thresholds.level_5a_min_capture
+    hallazgo = (
+        f"capture de B: mediana entre caminos {mediana:.3f} (umbral "
+        f"{thresholds.level_5a_min_capture:.2f}). {brecha.render()}"
+    )
+    if not captura:
+        hallazgo += ". B NO captura lo suficiente de una senal que esta en la columna"
+    if not gana:
+        hallazgo += ". B no se distingue de A pese a ver la columna"
+    return LevelResult(
+        5,
+        etiqueta,
+        Verdict.PASS if captura and gana else Verdict.FAIL,
+        criterio,
+        hallazgo,
+        agent_b.arms,
+    )
+
+
+def evaluate_level_5b(
+    agent_b: MultiPathResult, agent_a: MultiPathResult, thresholds: ProtocolThresholds
+) -> LevelResult:
+    """Control negativo del Agente B (ADR 0012, 5b). **Se mide y no bloquea.**
+
+    El 4b mas siete columnas de ruido. Reporta los tres criterios del 4b para B
+    (``evaluate_level_4b``) y la diferencia pareada B - A del exceso sobre estar
+    siempre invertido. Que B rote con el ruido (dispersion > 0.15) es un hallazgo,
+    no un fallo: no se recalibra B (ADR 0011, 2).
+    """
+    criterio = (
+        "se mide: los tres criterios del 4b para B y la diferencia pareada "
+        "B - A del exceso sobre estar siempre invertido; no bloquea"
+    )
+    etiqueta = "5b control negativo (ruido en las columnas)"
+    motivo = _pair_labels(agent_b, agent_a)
+    if motivo is not None:
+        return LevelResult(5, etiqueta, Verdict.FAIL, criterio, motivo, ())
+    como_4b = evaluate_level_4b(agent_b, thresholds)
+    exceso = paired_difference(
+        agent_a.decompositions["excess_log_growth_vs_always_long"],
+        agent_b.decompositions["excess_log_growth_vs_always_long"],
+        label_a="A (ciego)",
+        label_b="B",
+    )
+    dispersion = agent_b.decompositions.get("action_std")
+    hallazgo = (
+        f"criterios del 4b para B -> {como_4b.verdict}: {como_4b.finding}. "
+        f"Exceso sobre estar invertido: {exceso.render()}"
+    )
+    if dispersion is not None and dispersion.mean > thresholds.level_4b_max_action_std:
+        hallazgo += (
+            ". HALLAZGO: B rota con el ruido; siete entradas bastan para que la "
+            "configuracion del estudio vuelva a rotar"
+        )
+    return LevelResult(5, etiqueta, Verdict.MEASURED, criterio, hallazgo, agent_b.arms)
 
 
 def evaluate_level_3_multipath(
