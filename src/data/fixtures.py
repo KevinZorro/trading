@@ -420,31 +420,60 @@ def generate_signal_bars(
     if s0 <= 0:
         raise FixtureError("s0 debe ser positivo")
 
-    instrument = instrument or fixture_instrument()
     senal = _ar1_returns(n_bars, spec, seed, burn_in)
+    escala_barra = spec.sigma_target if spec.sigma_target > 0 else abs(spec.r0)
+    serie = _bars_from_returns(
+        senal,
+        bar_scale=escala_barra,
+        seed=None if spec.is_deterministic else seed,
+        instrument=instrument or fixture_instrument(),
+        s0=s0,
+        start=start,
+        freq=freq,
+        sub_steps=sub_steps,
+        intrabar_vol_frac=intrabar_vol_frac,
+        base_volume=base_volume,
+        volume_dispersion=volume_dispersion,
+        source=source,
+    )
+    return serie, senal
 
+
+def _bars_from_returns(
+    senal: FloatArray,
+    *,
+    bar_scale: float,
+    seed: int | None,
+    instrument: InstrumentSpec,
+    s0: float,
+    start: str,
+    freq: str,
+    sub_steps: int,
+    intrabar_vol_frac: float,
+    base_volume: float,
+    volume_dispersion: float,
+    source: str,
+) -> BarSeries:
+    """Barras con gap cero cuyo retorno de cierre es ``senal``.
+
+    ``seed=None`` es el caso sin ruido (nivel 0): intra-barra y volumen fijos.
+    """
+    n_bars = len(senal)
     pasos = senal.copy()
     pasos[0] = 0.0  # close[0] = s0: la barra 0 no arrastra retorno.
     log_close = math.log(s0) + np.cumsum(pasos)
     log_open = np.concatenate([[math.log(s0)], log_close[:-1]])
 
-    escala_barra = spec.sigma_target if spec.sigma_target > 0 else abs(spec.r0)
     # Un stream por componente. Con un solo generador, cuantos numeros consume
     # el camino intra-barra depende de n_bars, y entonces el volumen de la
     # barra 10 cambiaria segun cuantas barras se pidieron: el pasado del
     # fixture dependeria del futuro. Hay un test de leakage que lo fija.
-    rng: np.random.Generator | None
-    if spec.is_deterministic:
-        rng = None
-    elif seed is None:  # pragma: no cover - _ar1_returns ya lo rechazo
-        raise FixtureError("un fixture con ruido necesita semilla explicita")
-    else:
-        rng = np.random.default_rng([seed, 1])
+    rng = None if seed is None else np.random.default_rng([seed, 1])
     caminos = _intrabar_paths(
         log_open,
         log_close,
         sub_steps=sub_steps,
-        scale=intrabar_vol_frac * escala_barra,
+        scale=intrabar_vol_frac * bar_scale,
         rng=rng,
     )
     precios = np.exp(caminos)
@@ -453,7 +482,7 @@ def generate_signal_bars(
     high = precios.max(axis=1)
     low = precios.min(axis=1)
 
-    if rng is None or seed is None:
+    if seed is None:
         volume = np.full(n_bars, base_volume, dtype=np.float64)
     else:
         rng_volumen = np.random.default_rng([seed, 2])
@@ -468,7 +497,7 @@ def generate_signal_bars(
     else:
         timestamps = timestamps.tz_convert("UTC")
 
-    serie = BarSeries(
+    return BarSeries(
         instrument=instrument,
         freq=freq,
         timestamp=timestamps.tz_localize(None).to_numpy("datetime64[ns]"),
@@ -481,7 +510,6 @@ def generate_signal_bars(
         cash_dividend=np.zeros(n_bars),
         source=source,
     )
-    return serie, senal
 
 
 # ---------------------------------------------------------------------------
@@ -976,8 +1004,43 @@ class Ceilings:
 
 
 @dataclass(frozen=True)
+class ExogChannel:
+    """Una columna exogena de ``series.exog`` que predice el retorno siguiente.
+
+    ``E[r_{t+1} | F_t] = drift + beta * sigma_marginal * z_t``, con ``z_t`` la
+    columna ``column`` (media 0, varianza 1 por construccion). Asi
+    ``corr(z_t, r_{t+1}) = beta`` y el ``R^2`` es ``beta^2``, el mismo del nivel 1.
+    """
+
+    column: str
+    beta: float
+    sigma_marginal: float
+
+    def __post_init__(self) -> None:
+        if not 0.0 < abs(self.beta) < 1.0:
+            raise FixtureError(
+                "beta del canal exogeno debe estar en (0, 1) en valor absoluto"
+            )
+        if self.sigma_marginal <= 0.0:
+            raise FixtureError("sigma_marginal debe ser positivo")
+
+    def describe(self) -> dict[str, object]:
+        return {
+            "column": self.column,
+            "beta": self.beta,
+            "sigma_marginal": self.sigma_marginal,
+            "r_squared": self.beta * self.beta,
+        }
+
+
+@dataclass(frozen=True)
 class Fixture:
-    """Serie con senal conocida, su proceso y su optimo. Validacion, no estudio."""
+    """Serie con senal conocida, su proceso y su optimo. Validacion, no estudio.
+
+    ``channel`` solo existe en el nivel 5a: ahi la senal **no** esta en el precio
+    sino en una columna de ``series.exog``, y ``spec`` describe solo el residuo
+    (``beta=0``, ``sigma_target`` = desvio condicional).
+    """
 
     level: int
     name: str
@@ -987,6 +1050,7 @@ class Fixture:
     signal: FloatArray
     seed: int | None
     validation_only: bool = True
+    channel: ExogChannel | None = None
 
     def __post_init__(self) -> None:
         if len(self.signal) != len(self.series):
@@ -997,6 +1061,14 @@ class Fixture:
         senal = np.ascontiguousarray(self.signal, dtype=np.float64)
         senal.flags.writeable = False
         object.__setattr__(self, "signal", senal)
+        if (
+            self.channel is not None
+            and self.channel.column not in self.series.exog_names
+        ):
+            raise FixtureError(
+                f"el canal usa la columna {self.channel.column!r}, que la serie "
+                f"no tiene ({self.series.exog_names})"
+            )
         if not self.series.source.startswith("fixture:"):
             raise FixtureError(
                 "el source de un fixture tiene que empezar con 'fixture:'. La "
@@ -1010,9 +1082,32 @@ class Fixture:
     @property
     def expected_next_log_return(self) -> FloatArray:
         """``E[r_{t+1} | F_t]``, funcion de datos hasta ``t`` y nada mas."""
-        salida = self.spec.conditional_mean(self.signal)
+        if self.channel is not None:
+            salida = self._channel_mean()
+        else:
+            salida = self.spec.conditional_mean(self.signal)
         salida.flags.writeable = False
         return salida
+
+    def _channel_mean(self) -> FloatArray:
+        canal = self.channel
+        if canal is None or self.series.exog is None:  # pragma: no cover
+            raise FixtureError("el fixture no tiene canal exogeno")
+        z = self.series.exog[:, self.series.exog_names.index(canal.column)]
+        return np.asarray(
+            self.spec.drift + canal.beta * canal.sigma_marginal * z, dtype=np.float64
+        )
+
+    def without_exog(self) -> Fixture:
+        """El mismo mercado sin columnas exogenas: lo que ve el Agente A.
+
+        El techo del 5a sigue calculandose con la columna (es el optimo de quien
+        la conoce), asi que ``ceilings`` se pide al fixture completo y la corrida
+        del Agente A usa este.
+        """
+        if self.channel is not None:
+            raise FixtureError("sin la columna el techo del canal no se puede calcular")
+        return replace(self, series=replace(self.series, exog=None, exog_names=()))
 
     @property
     def sigma_by_bar(self) -> FloatArray:
@@ -1143,6 +1238,12 @@ class Fixture:
         """
         if self.spec.is_deterministic:
             return None
+        if self.channel is not None:
+            x, w = _grilla_normal()
+            m = self.spec.drift + self.channel.beta * self.channel.sigma_marginal * x
+            sigma = self.spec.sigma_for(0.0)
+            valor = _hold_log_value(m, np.full(len(m), sigma), safety=safety, rate=rate)
+            return float(np.maximum(valor, math.log1p(rate)) @ w)
         # Grilla fina y no Gauss-Hermite: el integrando lleva un `max`, o sea un
         # quiebre en el umbral de la politica, y la cuadratura gaussiana supone
         # un integrando suave. Medido: con 48 nodos el error contra la forma
@@ -1243,6 +1344,7 @@ class Fixture:
             "seed": self.seed,
             "validation_only": self.validation_only,
             "spec": self.spec.describe(),
+            "channel": None if self.channel is None else self.channel.describe(),
             "costs": self.costs.describe(),
             "series": self.series.meta(),
         }
@@ -1637,6 +1739,138 @@ def level_4b_detectable_drift(
     )
 
 
+# Columnas exogenas del nivel 5 (ADR 0012, 5). Mismos nombres y orden que
+# `features.news.NEWS_FEATURE_NAMES` (un test lo fija: `data` no importa `features`).
+# `acf1` es la autocorrelacion de primer orden de la contraparte real, medida sobre
+# `datasets/gdelt` (3 692 pares de dias para las cinco continuas; `finbert_mean` con
+# sus 31 % de huecos). Los dos indicadores son cadenas de Markov con esa
+# autocorrelacion y su frecuencia real (`no_title` 0,314; `coverage_ok` 0,917).
+# ASSUMPTION: la autocorrelacion de la contraparte real es lo unico que el ruido
+# toma de ella; las correlaciones cruzadas entre columnas son cero.
+EXOG_COLUMNS: tuple[tuple[str, float, float | None], ...] = (
+    ("news_share", 0.907, None),
+    ("news_share_z30", 0.450, None),
+    ("tone_mean", 0.549, None),
+    ("tone_delta7", 0.315, None),
+    ("finbert_mean", 0.703, None),
+    ("no_title", 0.998, 0.314),
+    ("coverage_ok", 0.767, 0.917),
+)
+EXOG_NAMES: tuple[str, ...] = tuple(c[0] for c in EXOG_COLUMNS)
+EXOG_PREDICTOR = "tone_mean"
+LEVEL_5A_BETA = 0.3
+
+
+def _exog_columns(n_bars: int, seed: int) -> FloatArray:
+    """Las siete columnas como ruido, independientes entre si y del precio.
+
+    Las continuas son AR(1) gaussianas de varianza 1 (arrancan en la distribucion
+    estacionaria). ``finbert_mean`` queda ``NaN`` donde ``no_title == 1``, como en
+    los datos reales: sin titulos no hay nada que puntuar.
+    """
+    salida = np.zeros((n_bars, len(EXOG_COLUMNS)), dtype=np.float64)
+    for j, (_, acf, frecuencia) in enumerate(EXOG_COLUMNS):
+        # Un stream por columna: con uno compartido, el pasado de la columna 3
+        # dependeria de cuantas barras se pidieron para las anteriores.
+        rng = np.random.default_rng([seed, 3, j])
+        if frecuencia is None:
+            e = rng.standard_normal(n_bars)
+            x = np.empty(n_bars)
+            x[0] = e[0]
+            paso = math.sqrt(1.0 - acf * acf)
+            for t in range(1, n_bars):
+                x[t] = acf * x[t - 1] + paso * e[t]
+            salida[:, j] = x
+        else:
+            sube = frecuencia * (1.0 - acf)  # P(0 -> 1)
+            sigue = frecuencia + (1.0 - frecuencia) * acf  # P(1 -> 1)
+            u = rng.random(n_bars)
+            x = np.empty(n_bars)
+            x[0] = float(u[0] < frecuencia)
+            for t in range(1, n_bars):
+                x[t] = float(u[t] < (sigue if x[t - 1] == 1.0 else sube))
+            salida[:, j] = x
+    sin_titulo = salida[:, EXOG_NAMES.index("no_title")] == 1.0
+    salida[sin_titulo, EXOG_NAMES.index("finbert_mean")] = np.nan
+    return salida
+
+
+def level_5a_exog_signal(
+    n_bars: int = DEFAULT_N_BARS,
+    *,
+    seed: int,
+    beta: float = LEVEL_5A_BETA,
+    sigma_target: float = DEFAULT_SIGMA,
+    drift: float = DEFAULT_DRIFT,
+) -> Fixture:
+    """Nivel 5a: la senal vive en ``tone_mean``, no en el precio. Sin costos.
+
+    ``r_{t+1} = drift + beta*sigma_target*z_t + sigma_target*sqrt(1-beta^2)*eps``
+    con ``z_t = tone_mean`` en ``t``. La media y la varianza marginales son las del
+    nivel 1. El precio solo casi no contiene nada: ``r_t`` y ``r_{t+1}`` comparten
+    la columna por su autocorrelacion (0,549), o sea ``corr = beta^2*0,549 =
+    0,049`` y ``R^2 = 0,0024``, 37 veces menos que el 0,09 de quien la ve. Es el control
+    positivo del Agente B (ADR 0012, 5a). Las otras seis columnas son ruido.
+    """
+    if not 0.0 < abs(beta) < 1.0:
+        raise FixtureError("beta debe estar en (0, 1) en valor absoluto")
+    exog = _exog_columns(n_bars, seed)
+    z = exog[:, EXOG_NAMES.index(EXOG_PREDICTOR)]
+    sigma_cond = sigma_target * math.sqrt(1.0 - beta * beta)
+    eps = np.random.default_rng([seed, 0]).standard_normal(n_bars)
+    senal = drift + sigma_cond * eps
+    senal[1:] += beta * sigma_target * z[:-1]
+    serie = _bars_from_returns(
+        senal,
+        bar_scale=sigma_target,
+        seed=seed,
+        instrument=fixture_instrument("FIXT5A"),
+        s0=100.0,
+        start="2020-01-01T21:00:00Z",
+        freq="1D",
+        sub_steps=8,
+        intrabar_vol_frac=0.6,
+        base_volume=1e7,
+        volume_dispersion=0.25,
+        source=f"fixture:level_5a:beta={beta}:seed={seed}",
+    )
+    serie = replace(serie, exog=exog, exog_names=EXOG_NAMES)
+    return Fixture(
+        level=5,
+        name=f"level_5a_exog_signal:beta={beta}",
+        series=serie,
+        spec=SignalSpec(drift=drift, beta=0.0, sigma_target=sigma_cond),
+        costs=ZERO_COSTS,
+        signal=senal,
+        seed=seed,
+        channel=ExogChannel(EXOG_PREDICTOR, beta, sigma_target),
+    )
+
+
+def level_5b_exog_noise(
+    n_bars: int = DEFAULT_N_BARS,
+    *,
+    seed: int,
+    mu: float = LEVEL_4B_MU,
+    bars_per_year: float = 252.0,
+) -> Fixture:
+    """Nivel 5b: el 4b mas las siete columnas como ruido. No predicen nada.
+
+    El control negativo del Agente B (ADR 0012, 5b): si B rota aqui, siete
+    entradas de ruido bastan para que la configuracion del estudio vuelva a rotar.
+    """
+    base = level_4b_detectable_drift(
+        n_bars, seed=seed, mu=mu, bars_per_year=bars_per_year
+    )
+    serie = replace(
+        base.series,
+        exog=_exog_columns(n_bars, seed),
+        exog_names=EXOG_NAMES,
+        source=f"fixture:level_5b:mu={mu}:seed={seed}",
+    )
+    return replace(base, level=5, name=f"level_5b_exog_noise:mu={mu}", series=serie)
+
+
 #: Registro de los cinco niveles. La Parte B recorre esto en orden.
 LEVELS: dict[str, Any] = {
     "level_0": level_0_deterministic,
@@ -1645,4 +1879,6 @@ LEVELS: dict[str, Any] = {
     "level_3": level_3_regime_flip,
     "level_4": level_4_control,
     "level_4b": level_4b_detectable_drift,
+    "level_5a": level_5a_exog_signal,
+    "level_5b": level_5b_exog_noise,
 }

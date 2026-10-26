@@ -164,7 +164,11 @@ def test_el_registro_cubre_los_cinco_niveles_y_el_4b() -> None:
     El 4a pregunta si el agente inventa senal donde no la hay; el 4b, si
     reconoce drift cuando existe. Estaban mezcladas en un solo veredicto.
     """
-    assert sorted(LEVELS) == [f"level_{i}" for i in range(5)] + ["level_4b"]
+    assert sorted(LEVELS) == [f"level_{i}" for i in range(5)] + [
+        "level_4b",
+        "level_5a",
+        "level_5b",
+    ]
 
 
 # ---------------------------------------------------------------------------
