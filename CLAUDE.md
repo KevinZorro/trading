@@ -255,6 +255,11 @@ Para cada feature, sin excepción:
 7. Esperar CI verde
 8. **Reportar el PR. No mergear sin aprobación humana.**
 
+**Matriz de trazabilidad.** Todo PR que cierre o avance un hito marca su fila del
+README como `mergeado` con su número desde el primer commit, no como `en revisión`:
+la fila solo llega a `main` si el PR se mergea, así que no queda desactualizada. Si el
+PR se cierra sin mergear, la fila no se publica.
+
 ### Tamaño de PR
 
 El revisor tiene unas 2 horas por semana. **Cada PR se revisa en 30–40 minutos**:
