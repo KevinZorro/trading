@@ -15,6 +15,7 @@ se peleen por los mismos nucleos:
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import sys
@@ -285,7 +286,8 @@ def cmd_calibrate(args: argparse.Namespace) -> int:
             todas = conf.rediagnosis_units()
             entrenar = conf.train_rediagnosis_unit
         elif gate.is_point(args.point):
-            todas, entrenar = gate.arm_units(args.point), gate.train_unit
+            todas = gate.arm_units(args.point)
+            entrenar = functools.partial(gate.train_unit, policy_dir=out / "policies")
         elif conf.is_point(args.point):
             todas, entrenar = conf.arm_units(args.point), conf.train_unit
         elif reg.is_rung(args.point):

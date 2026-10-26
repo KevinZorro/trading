@@ -15,6 +15,7 @@ from agents import calibration as cal
 from agents import confirmation, gate
 from agents.cli import PATH_SEEDS
 from agents.policy import ConstantWeightPolicy
+from agents.ppo import SB3Policy
 from agents.protocol import STUDY_SEEDS
 from features.news import NEWS_FEATURE_NAMES
 
@@ -91,3 +92,84 @@ def test_ensamblado_con_un_universo_chico(
     assert resumen["blocks_real_data"] is True
     assert len(json.loads((tmp_path / "MANIFEST.json").read_text())["units"]) == 16
     assert (tmp_path / "gate" / "multipath_5a_B.json").exists()
+
+
+# -- politicas guardadas para el re-diagnostico ----------------------------
+
+
+class _ModeloFalso:
+    """Lo minimo de un modelo SB3: ``save`` escribe un archivo y ``predict`` es fijo."""
+
+    def predict(self, observation: object, **_k: object) -> tuple[list[float], None]:
+        return [1.0], None
+
+    def save(self, path: str) -> None:
+        Path(f"{path}.zip").write_bytes(b"pesos")
+
+
+class _PoliticaFalsa(SB3Policy):
+    """Una SB3Policy que no necesita torch: siempre invertida, sigma fijo."""
+
+    def act(self, observation: object) -> float:  # type: ignore[override]
+        return 1.0
+
+    def sigma(self) -> float:
+        return 0.1
+
+
+def _entrena_con(policy_dir: Path, unit: cal.Unit) -> dict[str, object]:
+    return gate.train_unit(
+        unit,
+        policy_factory=lambda _f, _s: _PoliticaFalsa(_ModeloFalso(), recurrent=False),
+        policy_dir=policy_dir,
+    )
+
+
+@pytest.fixture
+def chico(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(gate, "DEFAULT_N_BARS", 500)
+
+
+def test_b_guarda_la_politica_de_las_dos_primeras_semillas(
+    tmp_path: Path, chico: None
+) -> None:
+    unidad = cal.Unit("N6-5a_B", 1, gate.GATE_PATH_SEEDS[0], STUDY_SEEDS[0])
+    registro = _entrena_con(tmp_path, unidad)
+    assert registro["policy_saved"] is True
+    assert (tmp_path / f"{unidad.key}.zip").read_bytes() == b"pesos"
+
+
+def test_no_guarda_la_de_a_ni_la_de_las_demas_semillas(
+    tmp_path: Path, chico: None
+) -> None:
+    ciega = cal.Unit("N6-5a_A", 1, gate.GATE_PATH_SEEDS[0], STUDY_SEEDS[0])
+    tercera = cal.Unit("N6-5b_B", 1, gate.GATE_PATH_SEEDS[0], STUDY_SEEDS[2])
+    for unidad in (ciega, tercera):
+        assert _entrena_con(tmp_path, unidad)["policy_saved"] is False
+    assert not list(tmp_path.glob("*.zip"))
+
+
+def test_sin_policy_dir_no_guarda_nada(chico: None) -> None:
+    unidad = cal.Unit("N6-5b_B", 1, gate.GATE_PATH_SEEDS[0], STUDY_SEEDS[0])
+    registro = gate.train_unit(
+        unidad, policy_factory=lambda _f, _s: ConstantWeightPolicy(1.0)
+    )
+    assert registro["policy_saved"] is False
+
+
+def test_run_arm_avisa_de_cada_politica_antes_de_evaluarla() -> None:
+    from agents.ppo import PPOConfig
+    from agents.protocol import run_arm
+    from data.fixtures import level_1_noisy
+
+    vistas: list[int] = []
+    run_arm(
+        level_1_noisy(400, seed=1),
+        label="x",
+        seeds=[3, 4],
+        ppo_config=PPOConfig(total_timesteps=1),
+        policy_factory=lambda _f, _s: ConstantWeightPolicy(1.0),
+        allow_fewer_seeds=True,
+        on_trained=lambda _p, semilla: vistas.append(semilla),
+    )
+    assert vistas == [3, 4]

@@ -29,6 +29,8 @@ import numpy as np
 from agents import calibration as cal
 from agents.confirmation import _merge
 from agents.experiment import jsonable
+from agents.policy import Policy
+from agents.ppo import SB3Policy
 from agents.protocol import (
     STUDY_SEEDS,
     LevelResult,
@@ -104,6 +106,7 @@ def config_digest() -> str:
         "path_seeds": list(GATE_PATH_SEEDS),
         "agent_seeds": list(STUDY_SEEDS),
         "n_bars": DEFAULT_N_BARS,
+        "saved_policy_seeds": list(SAVED_POLICY_SEEDS),
         "thresholds": ProtocolThresholds().describe(),
     }
     return hashlib.sha256(json.dumps(crudo, sort_keys=True).encode()).hexdigest()
@@ -114,14 +117,41 @@ def observation_for(a: GateArm) -> ObservationSpec:
     return STUDY_OBSERVATION if a.blind else replace(STUDY_OBSERVATION, exog=NEWS_EXOG)
 
 
+#: Semillas de agente de B cuyas politicas se guardan para el re-diagnostico: con
+#: 10 caminos son 20 politicas por nivel, el doble del minimo de ``summarize``.
+SAVED_POLICY_SEEDS: tuple[int, ...] = STUDY_SEEDS[:2]
+
+
+def policy_path(policy_dir: Path, unit: cal.Unit) -> Path:
+    """Donde queda la politica de una unidad (SB3 le agrega ``.zip``)."""
+    return policy_dir / unit.key
+
+
 def train_unit(
-    unit: cal.Unit, *, policy_factory: PolicyFactory | None = None
+    unit: cal.Unit,
+    *,
+    policy_factory: PolicyFactory | None = None,
+    policy_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Un (brazo, camino, semilla) con la configuracion del estudio."""
+    """Un (brazo, camino, semilla) con la configuracion del estudio.
+
+    Con ``policy_dir`` guarda la politica de los brazos de B para las semillas de
+    ``SAVED_POLICY_SEEDS``: el re-diagnostico (ADR 0012, 5) corre sobre **las
+    politicas de la puerta**, no sobre otras reentrenadas.
+    """
     a = arm(unit.point)
     fixture = LEVELS[a.level](DEFAULT_N_BARS, seed=unit.path_seed)
     train, _, _ = fixture.split()
     # perf_counter mide duracion; no consulta la hora de pared (CLAUDE.md, Clock).
+    guardar = (
+        policy_dir is not None and not a.blind and unit.agent_seed in SAVED_POLICY_SEEDS
+    )
+
+    def guardar_politica(politica: Policy, _semilla: int) -> None:
+        if guardar and policy_dir is not None and isinstance(politica, SB3Policy):
+            policy_dir.mkdir(parents=True, exist_ok=True)
+            politica.save(str(policy_path(policy_dir, unit)))
+
     inicio = time.perf_counter()
     brazo = run_arm(
         fixture,
@@ -132,6 +162,7 @@ def train_unit(
         observation=observation_for(a),
         blind=a.blind,
         allow_fewer_seeds=True,
+        on_trained=guardar_politica,
     )
     return {
         "unit": unit.key,
@@ -143,6 +174,7 @@ def train_unit(
         "wall_seconds": time.perf_counter() - inicio,
         "machine": cal.machine(),
         "observation": observation_for(a).describe(),
+        "policy_saved": bool(guardar),
         "arm": jsonable(brazo.describe()),
     }
 
