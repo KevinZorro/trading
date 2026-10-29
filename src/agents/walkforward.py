@@ -297,8 +297,13 @@ def evaluate_fold_seed(
     seed: int,
     config: WalkForwardConfig,
     policy_factory: PolicyFactory,
+    observation: ObservationSpec | None = None,
 ) -> FoldSeedRecord:
     """Entrena con las 1.000 barras del fold y evalua en su test, una vez.
+
+    ``observation`` es la del agente; por defecto ``ObservationSpec()``, la de C3.
+    El estudio A vs B (ADR 0012) pasa la de ``agents.study`` y, para B y el placebo,
+    la que suma las columnas de noticias; ``series`` ya trae esas columnas.
 
     El test se corre sobre ``[test.start - warmup, test.stop)``: los indicadores
     de la primera barra de test se calculan con barras anteriores, que son pasado.
@@ -307,7 +312,7 @@ def evaluate_fold_seed(
     su propio ``WarmupDelay``, asi que tampoco operan antes de ``test.start``;
     todas las metricas se miden desde esa barra.
     """
-    observacion = ObservationSpec()
+    observacion = observation or ObservationSpec()
     calentamiento = observacion.warmup
     entrenamiento = series.slice(*training_span(window))
     escalador = scaler_for(entrenamiento, observacion)  # solo con el train del fold
