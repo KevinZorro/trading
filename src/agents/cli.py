@@ -260,6 +260,16 @@ def cmd_study(args: argparse.Namespace) -> int:
     """ADR 0012: corrida sellada A vs B vs placebo. Toca el test una sola vez."""
     import subprocess
 
+    if args.action == "assemble":
+        from agents.study_assemble import describe_conditions, run_assemble
+
+        reporte = run_assemble(Path.cwd(), Path(args.out))
+        criterio = reporte["criterion"]
+        print(f"{criterio['verdict']} ({criterio['label']})")
+        print(describe_conditions(criterio))
+        return 0
+    if args.live_latency_p99_min is None:
+        raise SystemExit("study run exige --live-latency-p99-min")
     from agents.ppo import train_ppo
     from agents.study_run import StudyRunConfig, run_study
 
@@ -480,13 +490,13 @@ def main(argv: list[str] | None = None) -> int:
     w.set_defaults(func=cmd_walkforward)
 
     st = sub.add_parser("study", help="ADR 0012: corrida sellada A vs B vs placebo")
-    st.add_argument("action", choices=["run"])
+    st.add_argument("action", choices=["run", "assemble"])
     st.add_argument("--out", default="results/estudio")
     st.add_argument(
         "--live-latency-p99-min",
         type=float,
-        required=True,
-        help="p99 del retraso de los lotes en vivo, medido con los datos de L1",
+        default=None,
+        help="solo para run: p99 del retraso de los lotes en vivo (datos de L1)",
     )
     st.add_argument(
         "--resume",
