@@ -28,12 +28,20 @@ from typing import Any
 
 import numpy as np
 
+from agents.study_extras import (
+    BLACKOUT_FOLD,
+    blackout_fold,
+    news_coverage,
+    policy_sigma,
+)
 from agents.study_run import (
     ARM_A,
     ARM_B,
     ARM_PLACEBO,
     ARMS,
     StudyRunConfig,
+    arm_series,
+    load_news_table,
     read_records,
 )
 from agents.walkforward import (
@@ -236,6 +244,17 @@ def run_assemble(root: Path, out_dir: Path) -> dict[str, Any]:
         n_folds=len(ventanas),
         allow_fewer_seeds=len({r.seed for _, r in registros}) < 10,
     )
+    pocas = len({r.seed for _, r in registros}) < 10
+    tabla, _ = load_news_table(root, StudyRunConfig())
+    brazos = {a: arm_series(a, serie, tabla, StudyRunConfig()) for a in ARMS}
+    reporte["news_coverage"] = news_coverage(brazos, ventanas)
+    reporte["blackout_fold"] = blackout_fold(
+        registros,
+        brazos[ARM_B],
+        ventanas[BLACKOUT_FOLD],
+        allow_fewer_seeds=pocas,
+    )
+    reporte["policy_sigma"] = policy_sigma(registros, allow_fewer_seeds=pocas)
     reporte["provenance"] = {
         "seal": sello,
         "dataset_sha256": dataset_sha,

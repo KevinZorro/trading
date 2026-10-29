@@ -29,7 +29,8 @@ from typing import Any
 
 import numpy as np
 
-from agents.ppo import PPOConfig
+from agents.policy import Policy
+from agents.ppo import PPOConfig, SB3Policy
 from agents.protocol import STUDY_SEEDS
 from agents.study import STUDY_OBSERVATION, STUDY_PPO
 from agents.walkforward import (
@@ -88,6 +89,9 @@ class StudyRunConfig:
     observation: ObservationSpec = STUDY_OBSERVATION
     news_latency_min: int = int(NEWS_LATENCY / np.timedelta64(1, "m"))
     placebo_lag_days: int = int(PLACEBO_LAG / np.timedelta64(1, "D"))
+    # Politicas de B que se guardan para el re-diagnostico sobre datos reales
+    # (ADR 0012 §5): las de las dos primeras semillas, en cada fold.
+    saved_policy_seeds: tuple[int, ...] = STUDY_SEEDS[:2]
 
     def describe(self) -> dict[str, object]:
         walk = self.walk.describe()
@@ -100,6 +104,7 @@ class StudyRunConfig:
             "news_exog": [vars(c) for c in NEWS_EXOG],
             "news_latency_min": self.news_latency_min,
             "placebo_lag_days": self.placebo_lag_days,
+            "saved_policy_seeds": list(self.saved_policy_seeds),
             "arms": list(ARMS),
         }
 
@@ -187,6 +192,11 @@ def seal_payload(
     }
 
 
+def policy_path(out_dir: Path, unit: Unit) -> Path:
+    """Donde queda la politica de una unidad de B (SB3 le agrega ``.zip``)."""
+    return out_dir / "policies" / f"{unit.arm}-fold{unit.fold}-seed{unit.seed}"
+
+
 def _leer(path: Path) -> list[tuple[str, FoldSeedRecord]]:
     if not path.exists():
         return []
@@ -252,6 +262,17 @@ def run_study(
     for u in units(config, len(serie)):
         if (u.arm, u.fold, u.seed) in listos:
             continue
+
+        def guardar(politica: Policy, unidad: Unit = u) -> None:
+            if (
+                unidad.arm == ARM_B
+                and unidad.seed in config.saved_policy_seeds
+                and isinstance(politica, SB3Policy)
+            ):
+                destino = policy_path(out_dir, unidad)
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                politica.save(str(destino))
+
         registro = evaluate_fold_seed(
             por_brazo[u.arm],
             marcas,
@@ -260,6 +281,7 @@ def run_study(
             config.walk,
             fabricas[u.arm],
             arm_observation(u.arm, config),
+            guardar,
         )
         with registros_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"arm": u.arm, **registro.to_dict()}) + "\n")

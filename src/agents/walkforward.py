@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 from agents.policy import Policy
-from agents.ppo import PPOConfig
+from agents.ppo import PPOConfig, SB3Policy
 from agents.protocol import STUDY_SEEDS
 from agents.runner import build_env, run_baselines, run_policy, scaler_for
 from data.calendars import AlwaysOpen
@@ -267,6 +267,9 @@ class FoldSeedRecord:
     # comision. Mismas claves que el escenario principal; no decide.
     sensitivity: dict[str, Any] = field(repr=False)
     excess_daily: tuple[float, ...] = field(repr=False)
+    # sigma de la politica gaussiana al terminar el entrenamiento (ADR 0012 §8).
+    # ``None`` en los registros de C3 y con politicas que no la tienen.
+    policy_sigma: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         datos = asdict(self)
@@ -298,12 +301,14 @@ def evaluate_fold_seed(
     config: WalkForwardConfig,
     policy_factory: PolicyFactory,
     observation: ObservationSpec | None = None,
+    on_trained: Callable[[Policy], None] | None = None,
 ) -> FoldSeedRecord:
     """Entrena con las 1.000 barras del fold y evalua en su test, una vez.
 
     ``observation`` es la del agente; por defecto ``ObservationSpec()``, la de C3.
     El estudio A vs B (ADR 0012) pasa la de ``agents.study`` y, para B y el placebo,
     la que suma las columnas de noticias; ``series`` ya trae esas columnas.
+    ``on_trained`` recibe la politica ya entrenada, antes de evaluarla.
 
     El test se corre sobre ``[test.start - warmup, test.stop)``: los indicadores
     de la primera barra de test se calculan con barras anteriores, que son pasado.
@@ -331,6 +336,8 @@ def evaluate_fold_seed(
         )
 
     politica = policy_factory(lambda: entorno(entrenamiento, config_sim), seed)
+    if on_trained is not None:
+        on_trained(politica)
     principal = _escenario(
         series, marks, window, seed, politica, entorno, config_sim, calentamiento
     )
@@ -351,6 +358,7 @@ def evaluate_fold_seed(
         sensitivity={
             k: v for k, v in sensibilidad.items() if k in _CAMPOS_SENSIBILIDAD
         },
+        policy_sigma=politica.sigma() if isinstance(politica, SB3Policy) else None,
     )
 
 
