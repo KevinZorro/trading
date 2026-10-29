@@ -143,3 +143,8 @@ def test_ensamblado_sobre_una_corrida_real_escribe_resumen_y_manifest(
     resumen = json.loads((tmp_path / "summary.json").read_text())
     assert resumen["provenance"]["seal"]["commit"] == "abc"
     assert resumen["provenance"]["n_records"] == 66
+    assert resumen["policy_sigma"] == {}  # la politica constante no tiene sigma
+    assert resumen["blackout_fold"]["fold"] == 9
+    cobertura = resumen["news_coverage"]["B"]["total"]
+    assert 0.0 <= cobertura["coverage_ok_0"] <= 1.0
+    assert set(resumen["news_coverage"]) == {"B", "placebo"}

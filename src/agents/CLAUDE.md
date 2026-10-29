@@ -140,3 +140,6 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
 - **`study_assemble.py` aplica el criterio sobre registros guardados**, sin entrenar. Un
   DSR indefinido cuenta como 0.0, y una corrida con semillas o folds faltantes falla en
   vez de juzgarse. El veredicto de A es secundario (K1).
+- **Los extras de la sección 8 son descriptivos** (`study_extras.py`): no entran al
+  veredicto. `run_study` guarda las políticas de B de las dos primeras semillas para el
+  re-diagnóstico sobre datos reales, que no es de este módulo.
