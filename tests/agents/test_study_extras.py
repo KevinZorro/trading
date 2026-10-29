@@ -108,7 +108,7 @@ def test_run_study_guarda_solo_las_politicas_de_b_de_las_semillas_elegidas(
 ) -> None:
     base = StudyRunConfig()
     config = StudyRunConfig(
-        walk=replace(base.walk, seeds=(1, 2)), saved_policy_seeds=(1,)
+        walk=replace(base.walk, seeds=(1, 2), step=1000), saved_policy_seeds=(1,)
     )
     run_study(
         RAIZ,
@@ -119,7 +119,7 @@ def test_run_study_guarda_solo_las_politicas_de_b_de_las_semillas_elegidas(
         live_latency_p99_min=5.0,
     )
     guardadas = sorted(p.name for p in (tmp_path / "policies").iterdir())
-    assert guardadas == sorted(f"B-fold{f}-seed1.zip" for f in range(11))
+    assert guardadas == sorted(f"B-fold{f}-seed1.zip" for f in range(3))
     assert policy_path(tmp_path, Unit("B", 0, 1)).with_suffix(".zip").exists()
     assert not policy_path(tmp_path, Unit("A", 0, 1)).with_suffix(".zip").exists()
     assert not policy_path(tmp_path, Unit("B", 0, 2)).with_suffix(".zip").exists()
@@ -128,7 +128,7 @@ def test_run_study_guarda_solo_las_politicas_de_b_de_las_semillas_elegidas(
 
 def test_sin_politica_sb3_no_se_crea_la_carpeta_de_politicas(tmp_path: Path) -> None:
     base = StudyRunConfig()
-    config = StudyRunConfig(walk=replace(base.walk, seeds=(1,)))
+    config = StudyRunConfig(walk=replace(base.walk, seeds=(1,), step=1000))
     run_study(
         RAIZ,
         tmp_path,

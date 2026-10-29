@@ -232,13 +232,16 @@ def assemble_study(
     }
 
 
-def run_assemble(root: Path, out_dir: Path) -> dict[str, Any]:
+def run_assemble(
+    root: Path, out_dir: Path, config: StudyRunConfig | None = None
+) -> dict[str, Any]:
     """Lee la corrida sellada, aplica el criterio y escribe ``summary.json``."""
     sello = json.loads((out_dir / "SEAL.json").read_text(encoding="utf-8"))
     archivos = record_files(out_dir)
     registros = read_records(out_dir)
     serie, _, dataset_sha = load_dataset(root)
-    ventanas = folds(len(serie), StudyRunConfig().walk)
+    config = config or StudyRunConfig()
+    ventanas = folds(len(serie), config.walk)
     reporte = assemble_study(
         registros,
         [classify_regime(serie, v) for v in ventanas],
@@ -246,14 +249,16 @@ def run_assemble(root: Path, out_dir: Path) -> dict[str, Any]:
         allow_fewer_seeds=len({r.seed for _, r in registros}) < 10,
     )
     pocas = len({r.seed for _, r in registros}) < 10
-    tabla, _ = load_news_table(root, StudyRunConfig())
-    brazos = {a: arm_series(a, serie, tabla, StudyRunConfig()) for a in ARMS}
+    tabla, _ = load_news_table(root, config)
+    brazos = {a: arm_series(a, serie, tabla, config) for a in ARMS}
     reporte["news_coverage"] = news_coverage(brazos, ventanas)
-    reporte["blackout_fold"] = blackout_fold(
-        registros,
-        brazos[ARM_B],
-        ventanas[BLACKOUT_FOLD],
-        allow_fewer_seeds=pocas,
+    # Solo la geometria sellada tiene el fold del apagon; otra (tests) no lo tiene.
+    reporte["blackout_fold"] = (
+        blackout_fold(
+            registros, brazos[ARM_B], ventanas[BLACKOUT_FOLD], allow_fewer_seeds=pocas
+        )
+        if len(ventanas) > BLACKOUT_FOLD
+        else None
     )
     reporte["policy_sigma"] = policy_sigma(registros, allow_fewer_seeds=pocas)
     reporte["provenance"] = {
