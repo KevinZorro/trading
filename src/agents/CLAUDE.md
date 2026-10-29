@@ -137,3 +137,6 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   con otro commit falla. La corrida se niega si el p99 de latencia en vivo supera la usada.
 - **`WalkForwardConfig` y C3 no se tocan.** `evaluate_fold_seed` solo ganó un parámetro
   opcional `observation` (por defecto la de C3).
+- **`study_assemble.py` aplica el criterio sobre registros guardados**, sin entrenar. Un
+  DSR indefinido cuenta como 0.0, y una corrida con semillas o folds faltantes falla en
+  vez de juzgarse. El veredicto de A es secundario (K1).
