@@ -148,3 +148,28 @@ def test_ensamblado_sobre_una_corrida_real_escribe_resumen_y_manifest(
     cobertura = resumen["news_coverage"]["B"]["total"]
     assert 0.0 <= cobertura["coverage_ok_0"] <= 1.0
     assert set(resumen["news_coverage"]) == {"B", "placebo"}
+
+
+def test_el_ensamblado_lee_los_archivos_de_todos_los_shards(tmp_path: Path) -> None:
+    config = StudyRunConfig(walk=replace(StudyRunConfig().walk, seeds=(1, 2)))
+    for i in range(3):
+        run_study(
+            RAIZ,
+            tmp_path,
+            lambda _o: lambda _make_env, _seed: ConstantWeightPolicy(1.0),
+            config=config,
+            run_commit="abc",
+            live_latency_p99_min=5.0,
+            shard=(i, 3),
+        )
+    reporte = run_assemble(RAIZ, tmp_path)
+    assert reporte["provenance"]["n_records"] == 66
+    assert set(reporte["provenance"]["records_sha256"]) == {
+        f"records-{i}of3.jsonl" for i in range(3)
+    }
+    manifest = json.loads((tmp_path / "MANIFEST.json").read_text())
+    assert set(manifest) == {
+        "SEAL.json",
+        "summary.json",
+        *(f"records-{i}of3.jsonl" for i in range(3)),
+    }

@@ -43,6 +43,7 @@ from agents.study_run import (
     arm_series,
     load_news_table,
     read_records,
+    record_files,
 )
 from agents.walkforward import (
     DSR_N_TRIALS,
@@ -234,8 +235,8 @@ def assemble_study(
 def run_assemble(root: Path, out_dir: Path) -> dict[str, Any]:
     """Lee la corrida sellada, aplica el criterio y escribe ``summary.json``."""
     sello = json.loads((out_dir / "SEAL.json").read_text(encoding="utf-8"))
-    ruta = out_dir / "records.jsonl"
-    registros = read_records(ruta)
+    archivos = record_files(out_dir)
+    registros = read_records(out_dir)
     serie, _, dataset_sha = load_dataset(root)
     ventanas = folds(len(serie), StudyRunConfig().walk)
     reporte = assemble_study(
@@ -258,7 +259,9 @@ def run_assemble(root: Path, out_dir: Path) -> dict[str, Any]:
     reporte["provenance"] = {
         "seal": sello,
         "dataset_sha256": dataset_sha,
-        "records_sha256": hashlib.sha256(ruta.read_bytes()).hexdigest(),
+        "records_sha256": {
+            f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in archivos
+        },
         "n_records": len(registros),
         "limitations": (
             "N = 1 camino real: CONSISTENTE es el maximo (ADR 0012 §0 y §11)"
@@ -270,8 +273,8 @@ def run_assemble(root: Path, out_dir: Path) -> dict[str, Any]:
     (out_dir / "MANIFEST.json").write_text(
         json.dumps(
             {
-                name: hashlib.sha256((out_dir / name).read_bytes()).hexdigest()
-                for name in ("SEAL.json", "records.jsonl", "summary.json")
+                f.name: hashlib.sha256(f.read_bytes()).hexdigest()
+                for f in (out_dir / "SEAL.json", *archivos, out_dir / "summary.json")
             },
             indent=2,
             sort_keys=True,

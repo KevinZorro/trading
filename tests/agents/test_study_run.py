@@ -146,3 +146,59 @@ def test_reanudar_salta_las_unidades_escritas(tmp_path: Path) -> None:
 def test_walk_config_usa_el_agente_del_estudio_no_el_de_c3() -> None:
     assert StudyRunConfig().walk.total_timesteps == 120_000
     assert WalkForwardConfig().total_timesteps == 60_000  # C3 no se toca
+
+
+# ---------------------------------------------------------------------------
+# Reparto entre procesos (--shard)
+# ---------------------------------------------------------------------------
+
+ARGS_SHARD: dict[str, Any] = {
+    "config": UNA_SEMILLA,
+    "run_commit": "abc",
+    "live_latency_p99_min": 5.0,
+}
+
+
+def test_parse_shard_acepta_i_sobre_n_y_rechaza_el_resto() -> None:
+    assert sr.parse_shard("1/3") == (1, 3)
+    with pytest.raises(SealError, match="se espera i/n"):
+        sr.parse_shard("uno")
+    with pytest.raises(SealError, match="0 <= i < n"):
+        sr.parse_shard("3/3")
+
+
+def test_tres_shards_reparten_las_33_unidades_sin_solaparse(tmp_path: Path) -> None:
+    entrenadas = [
+        run_study(RAIZ, tmp_path, fabrica([]), **ARGS_SHARD, shard=(i, 3))
+        for i in range(3)
+    ]
+    assert entrenadas == [11, 11, 11]
+    assert [f.name for f in sr.record_files(tmp_path)] == [
+        f"records-{i}of3.jsonl" for i in range(3)
+    ]
+    registros = sr.read_records(tmp_path)
+    assert len({(a, r.fold, r.seed) for a, r in registros}) == 33
+    # Un shard repetido no entrena nada: lo suyo ya esta escrito.
+    assert run_study(RAIZ, tmp_path, fabrica([]), **ARGS_SHARD, shard=(1, 3)) == 0
+    sello = json.loads((tmp_path / "SEAL.json").read_text())
+    assert sello["commit"] == "abc"
+
+
+def test_una_corrida_completa_deja_sin_trabajo_a_los_shards(tmp_path: Path) -> None:
+    run_study(RAIZ, tmp_path, fabrica([]), **ARGS_SHARD)
+    assert run_study(RAIZ, tmp_path, fabrica([]), **ARGS_SHARD, shard=(0, 3)) == 0
+
+
+def test_un_shard_con_otra_configuracion_no_comparte_el_sello(tmp_path: Path) -> None:
+    run_study(RAIZ, tmp_path, fabrica([]), **ARGS_SHARD, shard=(0, 3))
+    otro = {**ARGS_SHARD, "run_commit": "otro"}
+    with pytest.raises(SealError, match="configuracion distinta"):
+        run_study(RAIZ, tmp_path, fabrica([]), **otro, shard=(1, 3))
+
+
+def test_una_unidad_repetida_entre_archivos_es_un_error(tmp_path: Path) -> None:
+    run_study(RAIZ, tmp_path, fabrica([]), **ARGS_SHARD, shard=(0, 3))
+    primera = (tmp_path / "records-0of3.jsonl").read_text().splitlines()[0]
+    (tmp_path / "records-1of3.jsonl").write_text(primera + "\n")
+    with pytest.raises(SealError, match="unidades repetidas"):
+        sr.read_records(tmp_path)

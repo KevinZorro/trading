@@ -208,9 +208,33 @@ def _leer(path: Path) -> list[tuple[str, FoldSeedRecord]]:
     return filas
 
 
-def read_records(path: Path) -> list[tuple[str, FoldSeedRecord]]:
-    """Los registros guardados como (brazo, registro), en orden de escritura."""
-    return _leer(path)
+def record_files(out_dir: Path) -> list[Path]:
+    """``records.jsonl`` y los de cada shard (``records-<i>of<n>.jsonl``), en orden."""
+    return sorted(out_dir.glob("records*.jsonl"))
+
+
+def read_records(out_dir: Path) -> list[tuple[str, FoldSeedRecord]]:
+    """Los registros de todos los archivos como (brazo, registro).
+
+    Una unidad escrita dos veces es un error: significa dos entrenamientos de la
+    misma unidad, y cual de los dos cuenta seria una eleccion.
+    """
+    todos = [fila for ruta in record_files(out_dir) for fila in _leer(ruta)]
+    claves = [(a, r.fold, r.seed) for a, r in todos]
+    if len(set(claves)) != len(claves):
+        raise SealError("hay unidades repetidas entre los archivos de registros")
+    return todos
+
+
+def parse_shard(texto: str) -> tuple[int, int]:
+    """``"1/3"`` -> (1, 3): el proceso 1 de 3, contando desde 0."""
+    try:
+        indice, total = (int(x) for x in texto.split("/"))
+    except ValueError as exc:
+        raise SealError(f"shard invalido {texto!r}: se espera i/n") from exc
+    if not 0 <= indice < total:
+        raise SealError(f"shard invalido {texto!r}: se exige 0 <= i < n")
+    return indice, total
 
 
 def run_study(
@@ -222,12 +246,18 @@ def run_study(
     run_commit: str,
     live_latency_p99_min: float,
     resume: bool = False,
+    shard: tuple[int, int] | None = None,
     expected_adr_sha: str = ADR_SHA256,
 ) -> int:
     """Corre todas las unidades que faltan y devuelve cuantas entreno.
 
     ``policy_factory(observation)`` devuelve la fabrica de politicas de un brazo,
     que recibe ``(make_env, seed)`` como en ``agents.walkforward``.
+
+    ``shard=(i, n)`` corre solo las unidades de posicion ``i`` modulo ``n`` y escribe
+    en su propio archivo, para repartir la corrida entre ``n`` procesos. Los ``n``
+    comparten el sello, que crea el primero que llega: por eso un shard acepta un
+    sello existente con la misma configuracion (como ``resume``).
     """
     config = config or StudyRunConfig()
     adr_sha = verify_adr(root, expected_adr_sha)
@@ -251,15 +281,20 @@ def run_study(
             run_commit=run_commit,
             live_latency_p99_min=live_latency_p99_min,
         ),
-        resume=resume,
+        resume=resume or shard is not None,
     )
-    registros_path = out_dir / "records.jsonl"
-    listos = {(a, r.fold, r.seed) for a, r in _leer(registros_path)}
+    nombre = (
+        "records.jsonl" if shard is None else f"records-{shard[0]}of{shard[1]}.jsonl"
+    )
+    registros_path = out_dir / nombre
+    listos = {(a, r.fold, r.seed) for a, r in read_records(out_dir)}
     ventanas: dict[int, Window] = {v.index: v for v in folds(len(serie), config.walk)}
     por_brazo = {a: arm_series(a, serie, tabla, config) for a in ARMS}
     fabricas = {a: policy_factory(arm_observation(a, config)) for a in ARMS}
     entrenadas = 0
-    for u in units(config, len(serie)):
+    for posicion, u in enumerate(units(config, len(serie))):
+        if shard is not None and posicion % shard[1] != shard[0]:
+            continue
         if (u.arm, u.fold, u.seed) in listos:
             continue
 

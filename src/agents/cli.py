@@ -271,7 +271,7 @@ def cmd_study(args: argparse.Namespace) -> int:
     if args.live_latency_p99_min is None:
         raise SystemExit("study run exige --live-latency-p99-min")
     from agents.ppo import train_ppo
-    from agents.study_run import StudyRunConfig, run_study
+    from agents.study_run import StudyRunConfig, parse_shard, run_study
 
     config = StudyRunConfig()
     commit = subprocess.run(
@@ -287,6 +287,7 @@ def cmd_study(args: argparse.Namespace) -> int:
         run_commit=commit,
         live_latency_p99_min=args.live_latency_p99_min,
         resume=args.resume,
+        shard=parse_shard(args.shard) if args.shard else None,
     )
     print(f"entrenamientos nuevos: {entrenadas}")
     return 0
@@ -497,6 +498,11 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=None,
         help="solo para run: p99 del retraso de los lotes en vivo (datos de L1)",
+    )
+    st.add_argument(
+        "--shard",
+        default=None,
+        help="solo para run: i/n reparte las unidades entre n procesos (0 <= i < n)",
     )
     st.add_argument(
         "--resume",

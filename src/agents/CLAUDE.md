@@ -143,3 +143,6 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
 - **Los extras de la sección 8 son descriptivos** (`study_extras.py`): no entran al
   veredicto. `run_study` guarda las políticas de B de las dos primeras semillas para el
   re-diagnóstico sobre datos reales, que no es de este módulo.
+- **`--shard i/n` reparte la corrida sin cambiar el resultado**: cada proceso escribe su
+  archivo, comparten el sello (mismo commit y configuración) y una unidad repetida entre
+  archivos es un error. El ensamblado lee todos.
