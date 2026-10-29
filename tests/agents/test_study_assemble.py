@@ -124,7 +124,7 @@ def test_ensamblado_sobre_una_corrida_real_escribe_resumen_y_manifest(
 ) -> None:
     """Tres brazos con la misma politica constante: D = 0, NO APORTA plano."""
     base = StudyRunConfig()
-    config = StudyRunConfig(walk=replace(base.walk, seeds=(1, 2)))
+    config = StudyRunConfig(walk=replace(base.walk, seeds=(1, 2), step=1000))
     run_study(
         RAIZ,
         tmp_path,
@@ -133,7 +133,7 @@ def test_ensamblado_sobre_una_corrida_real_escribe_resumen_y_manifest(
         run_commit="abc",
         live_latency_p99_min=5.0,
     )
-    reporte = run_assemble(RAIZ, tmp_path)
+    reporte = run_assemble(RAIZ, tmp_path, config)
     assert reporte["criterion"]["verdict"] == "NO APORTA"
     assert reporte["criterion"]["label"] == "plano"
     for clave in ("d_a_mark", "d_a_liq", "d_p_mark", "d_p_liq"):
@@ -142,9 +142,37 @@ def test_ensamblado_sobre_una_corrida_real_escribe_resumen_y_manifest(
     assert set(manifest) == {"SEAL.json", "records.jsonl", "summary.json"}
     resumen = json.loads((tmp_path / "summary.json").read_text())
     assert resumen["provenance"]["seal"]["commit"] == "abc"
-    assert resumen["provenance"]["n_records"] == 66
+    assert resumen["provenance"]["n_records"] == 18
     assert resumen["policy_sigma"] == {}  # la politica constante no tiene sigma
-    assert resumen["blackout_fold"]["fold"] == 9
+    assert resumen["blackout_fold"] is None  # 3 folds: no hay fold 9
     cobertura = resumen["news_coverage"]["B"]["total"]
     assert 0.0 <= cobertura["coverage_ok_0"] <= 1.0
     assert set(resumen["news_coverage"]) == {"B", "placebo"}
+
+
+@pytest.mark.slow
+def test_el_ensamblado_lee_los_archivos_de_todos_los_shards(tmp_path: Path) -> None:
+    config = StudyRunConfig(
+        walk=replace(StudyRunConfig().walk, seeds=(1, 2), step=1000)
+    )
+    for i in range(3):
+        run_study(
+            RAIZ,
+            tmp_path,
+            lambda _o: lambda _make_env, _seed: ConstantWeightPolicy(1.0),
+            config=config,
+            run_commit="abc",
+            live_latency_p99_min=5.0,
+            shard=(i, 3),
+        )
+    reporte = run_assemble(RAIZ, tmp_path, config)
+    assert reporte["provenance"]["n_records"] == 18
+    assert set(reporte["provenance"]["records_sha256"]) == {
+        f"records-{i}of3.jsonl" for i in range(3)
+    }
+    manifest = json.loads((tmp_path / "MANIFEST.json").read_text())
+    assert set(manifest) == {
+        "SEAL.json",
+        "summary.json",
+        *(f"records-{i}of3.jsonl" for i in range(3)),
+    }
