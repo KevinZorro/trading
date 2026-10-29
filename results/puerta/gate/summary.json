@@ -1,0 +1,31 @@
+{
+  "thresholds": {
+    "level_0_min_capture": 0.8,
+    "level_1_monotonia_tol": 0.1,
+    "level_1_min_capture_highest_snr": 0.5,
+    "level_2_min_turnover_drop": 0.1,
+    "level_4_min_paths": 10,
+    "level_4b_min_drift_t": 3.0,
+    "level_4b_min_time_invested": 0.8,
+    "level_4b_max_action_std": 0.15,
+    "level_4_pair_min_time_invested_gap": 0.0,
+    "level_5a_min_capture": 0.5
+  },
+  "levels": [
+    {
+      "level": 5,
+      "label": "5a control positivo (senal en tone_mean)",
+      "verdict": "PASS",
+      "statement": "mediana entre caminos del capture de B >= 0.50 y diferencia pareada B - A de capture positiva con t entre caminos sobre el critico (2.262 con N = 10)",
+      "finding": "capture de B: mediana entre caminos 0.925 (umbral 0.50). capture: B +0.9164 contra A (ciego) -0.0671  ->  diferencia pareada +0.9835 (sigma 0.2096, N=10 pares)  t=+14.84 contra 2.262  DISTINGUIBLE de cero"
+    },
+    {
+      "level": 5,
+      "label": "5b control negativo (ruido en las columnas)",
+      "verdict": "MEASURED",
+      "statement": "se mide: los tres criterios del 4b para B y la diferencia pareada B - A del exceso sobre estar siempre invertido; no bloquea",
+      "finding": "criterios del 4b para B -> PASS: t del drift mediana +5.96 (detectable). Tiempo invertido medio entre caminos 0.94 (sigma_mercado 0.067); dispersion de la accion media 0.119 (sigma_mercado 0.089); rotacion anualizada media 10.5. Exceso sobre estar invertido: excess_log_growth_vs_always_long: B -0.1829 contra A (ciego) -0.1561  ->  diferencia pareada -0.0268 (sigma 0.1105, N=10 pares)  t=-0.77 contra 2.262  NO distinguible de cero"
+    }
+  ],
+  "blocks_real_data": false
+}
