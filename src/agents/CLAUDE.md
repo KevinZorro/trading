@@ -127,3 +127,13 @@ Ver `docs/adr/0003-agente-a-y-protocolo-de-validacion.md`.
   por defecto, y `coverage` reporta `overlapping_test_bars` cuando sí. Con tests
   solapados hay más observaciones que información independiente, y hay que
   decirlo antes de calcular cualquier estadístico con ellas.
+
+## Estudio A vs B vs placebo (ADR 0012)
+
+- **`study_run.py` ejecuta y no juzga.** El criterio (sección 6) es del ensamblado.
+  Los tres brazos comparten serie, folds, semillas, costos y `STUDY_PPO`; solo
+  cambian las columnas de noticias (A ninguna, B las de `t`, placebo las de `t - 364 d`).
+- **El sello se escribe antes del primer entrenamiento** y lleva el commit: reanudar
+  con otro commit falla. La corrida se niega si el p99 de latencia en vivo supera la usada.
+- **`WalkForwardConfig` y C3 no se tocan.** `evaluate_fold_seed` solo ganó un parámetro
+  opcional `observation` (por defecto la de C3).

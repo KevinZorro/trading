@@ -256,6 +256,32 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_study(args: argparse.Namespace) -> int:
+    """ADR 0012: corrida sellada A vs B vs placebo. Toca el test una sola vez."""
+    import subprocess
+
+    from agents.ppo import train_ppo
+    from agents.study_run import StudyRunConfig, run_study
+
+    config = StudyRunConfig()
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    entrenadas = run_study(
+        Path.cwd(),
+        Path(args.out),
+        lambda _observation: lambda make_env, seed: train_ppo(
+            make_env, config.ppo, seed=seed
+        ),
+        config=config,
+        run_commit=commit,
+        live_latency_p99_min=args.live_latency_p99_min,
+        resume=args.resume,
+    )
+    print(f"entrenamientos nuevos: {entrenadas}")
+    return 0
+
+
 def cmd_calibrate(args: argparse.Namespace) -> int:
     """ADR 0010: calibra el presupuesto de entrenamiento sobre 4b."""
     from agents import calibration as cal
@@ -452,6 +478,22 @@ def main(argv: list[str] | None = None) -> int:
         help="continua una corrida interrumpida con la misma configuracion sellada",
     )
     w.set_defaults(func=cmd_walkforward)
+
+    st = sub.add_parser("study", help="ADR 0012: corrida sellada A vs B vs placebo")
+    st.add_argument("action", choices=["run"])
+    st.add_argument("--out", default="results/estudio")
+    st.add_argument(
+        "--live-latency-p99-min",
+        type=float,
+        required=True,
+        help="p99 del retraso de los lotes en vivo, medido con los datos de L1",
+    )
+    st.add_argument(
+        "--resume",
+        action="store_true",
+        help="continua una corrida interrumpida con el mismo sello",
+    )
+    st.set_defaults(func=cmd_study)
 
     c = sub.add_parser(
         "calibrate", help="ADR 0010: presupuesto de entrenamiento sobre 4b"
