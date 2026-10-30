@@ -93,9 +93,9 @@ indistinguibles. Eso es lo esperable de políticas casi idénticas con una seña
 
 ## Qué sigue
 
-1. **N8e**: re-diagnóstico con cinco grupos (retornos, técnicos, posición, banderas,
-   noticias) sobre las políticas guardadas de B, para ver si las noticias mueven la
-   acción y cuánto, contra el piso de ruido de 0,025 (ver puerta).
+1. **N8e (hecho)**: re-diagnóstico con cinco grupos sobre las políticas guardadas de B:
+   fijar las noticias cambia la acción 0,0106 (< 0,02), así que B no las usa. Ver
+   `REDIAGNOSTICO.md`.
 2. Subir los registros completos como Release (`n9-resultados`) con el SHA256 del
    manifest. Lo hace Kevin con `gh release create`.
 3. Etapa 6 (barrido de capital) solo tiene sentido si algún brazo supera a
