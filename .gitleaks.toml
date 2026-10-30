@@ -1,0 +1,11 @@
+# Extiende las reglas por defecto. Unica excepcion: los SHA256 de los archivos del
+# tokenizador de FinBERT que `SEAL.json` y `summary.json` copian del manifest de pesos.
+# Son huellas publicas, no secretos, y la regla generic-api-key las confunde con claves.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "SHA256 de los archivos del tokenizador de FinBERT en results/estudio"
+paths = ['''results/estudio/(SEAL|summary)\.json''']
+regexTarget = "line"
+regexes = ['''"(special_tokens_map|tokenizer_config)\.json": "[0-9a-f]{64}"''']
