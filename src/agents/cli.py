@@ -268,6 +268,17 @@ def cmd_study(args: argparse.Namespace) -> int:
         print(f"{criterio['verdict']} ({criterio['label']})")
         print(describe_conditions(criterio))
         return 0
+    if args.action == "diagnose":
+        # N8e: descriptivo, sobre las politicas de B guardadas por la corrida.
+        from agents import study_diagnosis
+
+        if args.policies is None:
+            raise SystemExit("study diagnose exige --policies")
+        resumen = study_diagnosis.run(
+            Path.cwd(), Path(args.policies), Path(args.out), progress=print
+        )
+        print(resumen["reading"])
+        return 0
     if args.live_latency_p99_min is None:
         raise SystemExit("study run exige --live-latency-p99-min")
     from agents.ppo import train_ppo
@@ -491,13 +502,18 @@ def main(argv: list[str] | None = None) -> int:
     w.set_defaults(func=cmd_walkforward)
 
     st = sub.add_parser("study", help="ADR 0012: corrida sellada A vs B vs placebo")
-    st.add_argument("action", choices=["run", "assemble"])
+    st.add_argument("action", choices=["run", "assemble", "diagnose"])
     st.add_argument("--out", default="results/estudio")
     st.add_argument(
         "--live-latency-p99-min",
         type=float,
         default=None,
         help="solo para run: p99 del retraso de los lotes en vivo (datos de L1)",
+    )
+    st.add_argument(
+        "--policies",
+        default=None,
+        help="solo para diagnose: carpeta que contiene policies/ (la de la corrida)",
     )
     st.add_argument(
         "--shard",
