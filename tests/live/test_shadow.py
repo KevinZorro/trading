@@ -163,3 +163,22 @@ def test_cada_heartbeat_avisa_progreso(tmp_path: Path) -> None:
     )
     runner.step(Due(t("2026-10-17T17:30:00"), "periodic"))
     assert llamadas == [1]
+
+
+def test_lo_que_escribe_la_sombra_lo_lee_la_evaluacion(tmp_path: Path) -> None:
+    # Contrato de formato con eval.shadow (ADR 0007 §6): mismos nombres de campo y
+    # la cabecera con el SHA256 del ADR que la evaluacion exige.
+    from eval.shadow import cell_stats, read_snapshots, spread_ratio
+
+    runner, _, _ = armar(tmp_path, "2026-10-17T17:30:00")
+    escrito = runner.step(Due(t("2026-10-17T17:30:00"), "periodic"))
+    snaps = read_snapshots(tmp_path)
+    sha = hashlib.sha256(ADR_PATH.read_bytes()).hexdigest()
+    assert [h["adr_sha256"] for h in snaps.headers] == [sha]
+    (registro,) = snaps.records
+    assert spread_ratio(registro) == escrito.cells[0]["ratios"]["ratio_spread"]
+    celdas = cell_stats(snaps.records)
+    assert [c.key for c in celdas] == [
+        f"{s:g}/{lado}" for s in (10, 100, 1000) for lado in ("buy", "sell")
+    ]
+    assert celdas[0].real_depth_impact_bps == 0.0  # 10 USDT caben en el primer nivel

@@ -254,6 +254,7 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 | Grabaciones reales de -1013, -2010 y -1022 | PR 7a | #42 | mergeado | `tests/live/respuestas/testnet/err_*.json` |
 | Venue de testnet maneja -1013 y -2010 como rechazo con motivo; -1022 se propaga | PR 7b | #45 | mergeado | `src/live/testnet_venue.py`, `tests/live/test_testnet_venue.py` |
 | PR 8b: WebSocket como observador (comisión real, fills tras caída) | ADR 0007 §7 | #44 | mergeado | `src/live/testnet_ws.py`; lo grabado en 8a: `tests/live/respuestas/testnet_ws/` |
+| Evaluación de la predicción del spread lista para correr: script, reporte y guía (`scripts/evaluar_sombra.py`) | ADR 0007 §3 y §6 | #84 | mergeado | `src/eval/shadow.py`, `src/eval/shadow_report.py`, `scripts/evaluar_sombra.py`, `docs/evaluar-sombra.md`, `tests/eval/test_shadow.py` |
 | Persistir el estado de `RiskLayer` ante reinicio | deuda de PR 5b | sin PR | pendiente | `src/risk/layer.py` no persiste estado |
 
 ### Sombra de costos en mainnet
@@ -262,7 +263,7 @@ sombra valida costos; testnet valida mecánica, nunca costos.
 |---|---|
 | Despliegue | Hecho el 2026-10-19 en una VM del proveedor de nube; el proceso corre en Docker (`docs/despliegue-sombra.md`). |
 | Reloj de 30 días | **En marcha.** Primer snapshot diario válido: 2026-10-20 00:00:30 UTC, con los diez Agentes A cargados sin errores (semillas 11, 23, 37, 41, 59, 67, 73, 89, 97 y 101). Ventana: 2026-10-20 a ~2026-11-18. |
-| Evaluación de la predicción | **Abierta.** Sin evaluar hasta completar la ventana. |
+| Evaluación de la predicción | **Abierta.** Sin evaluar hasta completar la ventana (cierra el 2026-11-18 a las 00:10:30 UTC). El script está listo: antes del cierre solo muestra el avance; al cerrar escribe `results/sombra/` (`docs/evaluar-sombra.md`). |
 | Veredicto | Menos de 25 de los 30 snapshots válidos significa **NO EVALUABLE** (ADR 0007 §6). La predicción sobre el spread está pre-registrada ahí y no se edita. |
 
 ### Etapa 4 y prerrequisitos de la Etapa 5
