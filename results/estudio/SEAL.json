@@ -1,0 +1,18 @@
+{
+  "adr_sha256": "5bd0b4079e922f3bb77c63c560038e514cd44271886211b283be93133fed9c40",
+  "commit": "d4da04c847f28170b9292bc9d2f564cc43c5f08d",
+  "config": "cb13996eca027c4a786e645f57b8e6a68c99b089abdfab3a5ecdfe419fd07cf0",
+  "dataset_sha256": "0940f089d796da4d5bda34b30463e0c3b19b1e6b8c322f8fcd3517f2aee49cc8",
+  "finbert_batches_sha256": "e85ea25ba064a1072db4ca3d1834c8d1dc2ae7cc49806316eae54c0bfe849d4d",
+  "finbert_files": {
+    "config.json": "f6449ddda85eb726207a40be59c0cd3bd4b142ccb27298d5e45f9ae3396b1abe",
+    "model.safetensors": "e5897858ff819aad7629b96ce521ae5477952d03634ef5dd30ed2d76357a9f00",
+    "special_tokens_map.json": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3",
+    "tokenizer_config.json": "ffc7913f6084b138dad68de5a0c2f0ee25ac983709260901e01f53be5796b9d9",
+    "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+  },
+  "finbert_revision": "0bc2ac10dda6929bcb1f77ccc43c7ec5c424f031",
+  "latency_min": 60,
+  "live_latency_p99_min": 48.4,
+  "news_dataset_sha256": "25af73a176e455142083f7788323c4c73ddfdc4e59ce50f9495731c74006205a"
+}
